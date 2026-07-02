@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>慈善公益團體管理系統 v1.0</title>
+<style>
+  :root {
+    --primary: #2e6b4f;
+    --primary-light: #4a9e75;
+    --primary-dark: #1a4432;
+    --accent: #f0a500;
+    --accent-light: #ffc947;
+    --bg: #f4f7f4;
+    --card: #ffffff;
+    --text: #1a2e1a;
+    --text-muted: #5a7a5a;
+    --border: #d0e0d0;
+    --danger: #c0392b;
+    --success: #27ae60;
+    --info: #2980b9;
+    --shadow: 0 2px 12px rgba(0,0,0,0.08);
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Microsoft JhengHei', '微軟正黑體', Arial, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* ===== TOP BAR ===== */
+  #topbar {
+    background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+    color: #fff;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px; height: 56px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    position: sticky; top: 0; z-index: 100;
+  }
+  #topbar .logo { font-size: 18px; font-weight: 700; letter-spacing: 1px; display: flex; align-items: center; gap: 8px; }
+  #topbar .logo span { font-size: 22px; }
+  #topbar .org-switch { display: flex; gap: 8px; }
+  #topbar .org-btn {
+    padding: 5px 16px; border: 2px solid rgba(255,255,255,0.4); border-radius: 20px;
+    background: transparent; color: #fff; cursor: pointer; font-size: 13px; font-family: inherit;
+    transition: all 0.2s;
+  }
+  #topbar .org-btn.active { background: var(--accent); border-color: var(--accent); color: #1a1a1a; font-weight: 700; }
+  #topbar .date-info { font-size: 12px; opacity: 0.7; }
+
+  /* ===== LAYOUT ===== */
+  #layout { display: flex; min-height: calc(100vh - 56px); }
+  #sidebar {
+    width: 200px; min-width: 200px; background: #fff;
+    border-right: 1px solid var(--border);
+    padding: 16px 0;
+    position: sticky; top: 56px; height: calc(100vh - 56px); overflow-y: auto;
+  }
+  #sidebar .nav-section { padding: 6px 16px 4px; font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+  #sidebar .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 20px; cursor: pointer; font-size: 14px;
+    border-left: 3px solid transparent; transition: all 0.15s;
+  }
+  #sidebar .nav-item:hover { background: #f0f8f0; }
+  #sidebar .nav-item.active { background: #e8f5e9; border-left-color: var(--primary); color: var(--primary); font-weight: 600; }
+  #sidebar .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+  #main { flex: 1; padding: 24px; overflow-y: auto; }
+
+  /* ===== CARDS ===== */
+  .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; margin-bottom: 20px; }
+  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .card-title { font-size: 16px; font-weight: 700; color: var(--primary-dark); display: flex; align-items: center; gap: 8px; }
+
+  /* ===== STAT GRID ===== */
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 20px; }
+  .stat-card {
+    background: var(--card); border-radius: var(--radius); padding: 18px 20px;
+    box-shadow: var(--shadow); border-left: 4px solid var(--primary);
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .stat-card.gold { border-left-color: var(--accent); }
+  .stat-card.blue { border-left-color: var(--info); }
+  .stat-card.red { border-left-color: var(--danger); }
+  .stat-label { font-size: 12px; color: var(--text-muted); }
+  .stat-value { font-size: 26px; font-weight: 700; color: var(--primary-dark); }
+  .stat-card.gold .stat-value { color: #c07800; }
+  .stat-card.blue .stat-value { color: var(--info); }
+  .stat-card.red .stat-value { color: var(--danger); }
+  .stat-sub { font-size: 11px; color: var(--text-muted); }
+
+  /* ===== TABLE ===== */
+  .tbl-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { background: #f0f8f0; color: var(--primary-dark); font-weight: 600; padding: 10px 12px; text-align: left; border-bottom: 2px solid var(--border); }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:hover td { background: #f8fdf8; }
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;
+  }
+  .badge-green { background: #d4edda; color: #155724; }
+  .badge-yellow { background: #fff3cd; color: #856404; }
+  .badge-red { background: #f8d7da; color: #721c24; }
+  .badge-blue { background: #cce5ff; color: #004085; }
+  .badge-gray { background: #e2e3e5; color: #383d41; }
+
+  /* ===== BUTTONS ===== */
+  .btn {
+    padding: 7px 16px; border-radius: 6px; border: none; cursor: pointer;
+    font-family: inherit; font-size: 13px; font-weight: 600; transition: all 0.15s;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: var(--primary-light); }
+  .btn-accent { background: var(--accent); color: #1a1a1a; }
+  .btn-accent:hover { background: var(--accent-light); }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn-outline { background: transparent; border: 1.5px solid var(--primary); color: var(--primary); }
+  .btn-outline:hover { background: #e8f5e9; }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-danger:hover { background: #a93226; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* ===== FORM ===== */
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group label { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+  .form-group input, .form-group select, .form-group textarea {
+    padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 6px;
+    font-family: inherit; font-size: 14px; background: #fff; color: var(--text);
+    transition: border 0.15s;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+    outline: none; border-color: var(--primary);
+  }
+  .form-group textarea { resize: vertical; min-height: 70px; }
+  .form-footer { margin-top: 16px; display: flex; gap: 10px; }
+
+  /* ===== MODAL ===== */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    z-index: 200; align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: #fff; border-radius: 14px; padding: 28px; width: 90%; max-width: 560px;
+    max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 40px rgba(0,0,0,0.2);
+  }
+  .modal-title { font-size: 18px; font-weight: 700; color: var(--primary-dark); margin-bottom: 20px; }
+  .modal-footer { margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; }
+
+  /* ===== SECTION TITLE ===== */
+  .section-title { font-size: 22px; font-weight: 700; color: var(--primary-dark); margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+
+  /* ===== SEARCH BAR ===== */
+  .search-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+  .search-bar input { padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 14px; min-width: 200px; }
+  .search-bar input:focus { outline: none; border-color: var(--primary); }
+
+  /* ===== TABS ===== */
+  .tab-bar { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 20px; }
+  .tab-btn {
+    padding: 10px 20px; border: none; background: transparent; cursor: pointer;
+    font-family: inherit; font-size: 14px; color: var(--text-muted); border-bottom: 3px solid transparent;
+    margin-bottom: -2px; transition: all 0.15s;
+  }
+  .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 700; }
+  .tab-btn:hover { color: var(--primary); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ===== PROGRESS BAR ===== */
+  .progress-bar { background: var(--border); border-radius: 8px; height: 10px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--primary), var(--primary-light)); border-radius: 8px; transition: width 0.5s; }
+
+  /* ===== TIMELINE ===== */
+  .timeline { list-style: none; }
+  .timeline li { display: flex; gap: 14px; margin-bottom: 14px; }
+  .timeline-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--primary); margin-top: 4px; flex-shrink: 0; }
+  .timeline-content { flex: 1; }
+  .timeline-date { font-size: 11px; color: var(--text-muted); }
+  .timeline-text { font-size: 14px; }
+
+  /* ===== ALERT ===== */
+  .alert { padding: 12px 16px; border-radius: 8px; font-size: 14px; margin-bottom: 14px; }
+  .alert-info { background: #cce5ff; color: #004085; border-left: 4px solid var(--info); }
+  .alert-success { background: #d4edda; color: #155724; border-left: 4px solid var(--success); }
+  .alert-warn { background: #fff3cd; color: #856404; border-left: 4px solid var(--accent); }
+
+  /* ===== RESPONSIVE ===== */
+  @media (max-width: 700px) {
+    #sidebar { display: none; }
+    #main { padding: 14px; }
+    .stat-grid { grid-template-columns: 1fr 1fr; }
+  }
+
+  /* ===== PAGE VISIBILITY ===== */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ===== RECEIPT ===== */
+  .receipt-box { border: 2px dashed var(--primary); border-radius: 10px; padding: 20px; background: #f9fff9; }
+  .receipt-title { text-align: center; font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+  .receipt-org { text-align: center; color: var(--text-muted); font-size: 13px; margin-bottom: 16px; }
+  .receipt-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 14px; }
+  .receipt-total { display: flex; justify-content: space-between; padding: 10px 0 0; font-size: 16px; font-weight: 700; color: var(--primary); }
+
+  /* ===== ORG BADGE ===== */
+  .org-tag { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+  .org-gd { background: #e8f5e9; color: #1b5e20; }
+  .org-jj { background: #e3f2fd; color: #0d47a1; }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <div class="logo"><span>🕊️</span> 慈善公益團體管理系統</div>
+  <div class="org-switch">
+    <button class="org-btn active" onclick="switchOrg('all')">全部</button>
+    <button class="org-btn" onclick="switchOrg('gd')">功德會</button>
+    <button class="org-btn" onclick="switchOrg('jj')">基金會</button>
+  </div>
+  <div class="date-info">今日：<span id="today-date"></span> ｜ v1.0</div>
+</div>
+
+<!-- LAYOUT -->
+<div id="layout">
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div class="nav-section">主要功能</div>
+    <div class="nav-item active" onclick="showPage('dashboard')"><span class="nav-icon">🏠</span>總覽儀表板</div>
+    <div class="nav-item" onclick="showPage('members')"><span class="nav-icon">👥</span>會員管理</div>
+    <div class="nav-item" onclick="showPage('donations')"><span class="nav-icon">💝</span>捐款管理</div>
+    <div class="nav-item" onclick="showPage('activities')"><span class="nav-icon">📅</span>活動管理</div>
+    <div class="nav-item" onclick="showPage('volunteers')"><span class="nav-icon">🤝</span>志工管理</div>
+    <div class="nav-section">財務</div>
+    <div class="nav-item" onclick="showPage('finance')"><span class="nav-icon">💰</span>財務帳目</div>
+    <div class="nav-item" onclick="showPage('reports')"><span class="nav-icon">📊</span>報表統計</div>
+    <div class="nav-section">設定</div>
+    <div class="nav-item" onclick="showPage('orgs')"><span class="nav-icon">🏛️</span>組織資料</div>
+    <div class="nav-item" onclick="showPage('settings')"><span class="nav-icon">⚙️</span>系統設定</div>
+  </div>
+
+  <!-- MAIN -->
+  <div id="main">
+
+    <!-- ===== DASHBOARD ===== -->
+    <div id="page-dashboard" class="page active">
+      <div class="section-title">🏠 總覽儀表板</div>
+
+      <div class="alert alert-info">📌 目前顯示：<span id="org-label">全部組織</span> ｜ 資料更新時間：<span id="update-time"></span></div>
+
+      <div class="stat-grid" id="stat-grid">
+        <div class="stat-card"><div class="stat-label">總會員數</div><div class="stat-value" id="s-members">0</div><div class="stat-sub">活躍會員</div></div>
+        <div class="stat-card gold"><div class="stat-label">本月捐款</div><div class="stat-value" id="s-donate">$0</div><div class="stat-sub">累計金額</div></div>
+        <div class="stat-card blue"><div class="stat-label">進行中活動</div><div class="stat-value" id="s-acts">0</div><div class="stat-sub">個活動</div></div>
+        <div class="stat-card red"><div class="stat-label">志工人數</div><div class="stat-value" id="s-vols">0</div><div class="stat-sub">已登記</div></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <!-- 最近捐款 -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">💝 最近捐款記錄</div>
+            <button class="btn btn-sm btn-outline" onclick="showPage('donations')">查看全部</button>
+          </div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>捐款人</th><th>金額</th><th>日期</th><th>組織</th></tr></thead>
+              <tbody id="dash-donate-list"></tbody>
+            </table>
+          </div>
+        </div>
+        <!-- 近期活動 -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">📅 近期活動</div>
+            <button class="btn btn-sm btn-outline" onclick="showPage('activities')">查看全部</button>
+          </div>
+          <div id="dash-act-list"></div>
+        </div>
+      </div>
+
+      <!-- 功德會 vs 基金會 -->
+      <div class="card">
+        <div class="card-title" style="margin-bottom:14px;">🏛️ 組織比較</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+          <div>
+            <div style="font-weight:700;color:#1b5e20;margin-bottom:8px;">🙏 功德會</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">會員</div>
+            <div class="progress-bar"><div class="progress-fill" id="gd-bar" style="width:60%"></div></div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px;" id="gd-stat"></div>
+          </div>
+          <div>
+            <div style="font-weight:700;color:#0d47a1;margin-bottom:8px;">🏛️ 基金會</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">會員</div>
+            <div class="progress-bar"><div class="progress-fill" id="jj-bar" style="width:40%;background:linear-gradient(90deg,#2980b9,#5dade2)"></div></div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px;" id="jj-stat"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== MEMBERS ===== -->
+    <div id="page-members" class="page">
+      <div class="section-title">👥 會員管理</div>
+      <div class="card">
+        <div class="card-header">
+          <div class="search-bar">
+            <input type="text" id="member-search" placeholder="🔍 搜尋姓名/電話..." oninput="renderMembers()">
+            <select id="member-org-filter" onchange="renderMembers()">
+              <option value="">全部組織</option>
+              <option value="功德會">功德會</option>
+              <option value="基金會">基金會</option>
+            </select>
+            <select id="member-status-filter" onchange="renderMembers()">
+              <option value="">全部狀態</option>
+              <option value="正常">正常</option>
+              <option value="待審">待審</option>
+              <option value="停止">停止</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" onclick="openModal('modal-add-member')">＋ 新增會員</button>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>會員編號</th><th>姓名</th><th>組織</th><th>電話</th><th>加入日期</th><th>狀態</th><th>累積捐款</th><th>操作</th></tr></thead>
+            <tbody id="members-list"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== DONATIONS ===== -->
+    <div id="page-donations" class="page">
+      <div class="section-title">💝 捐款管理</div>
+      <div class="card">
+        <div class="card-header">
+          <div class="search-bar">
+            <input type="text" id="donate-search" placeholder="🔍 搜尋捐款人..." oninput="renderDonations()">
+            <select id="donate-org-filter" onchange="renderDonations()">
+              <option value="">全部組織</option>
+              <option value="功德會">功德會</option>
+              <option value="基金會">基金會</option>
+            </select>
+            <select id="donate-type-filter" onchange="renderDonations()">
+              <option value="">全部類型</option>
+              <option value="一般捐款">一般捐款</option>
+              <option value="超薦捐款">超薦捐款</option>
+              <option value="功德金">功德金</option>
+              <option value="贊助計畫">贊助計畫</option>
+            </select>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-accent" onclick="openModal('modal-add-donation')">＋ 登記捐款</button>
+            <button class="btn btn-outline" onclick="openModal('modal-receipt')">🖨️ 開立收據</button>
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>收據編號</th><th>捐款人</th><th>組織</th><th>類型</th><th>金額</th><th>日期</th><th>備註</th><th>收據</th></tr></thead>
+            <tbody id="donations-list"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== ACTIVITIES ===== -->
+    <div id="page-activities" class="page">
+      <div class="section-title">📅 活動管理</div>
+      <div class="card">
+        <div class="card-header">
+          <div class="search-bar">
+            <input type="text" id="act-search" placeholder="🔍 搜尋活動..." oninput="renderActivities()">
+            <select id="act-org-filter" onchange="renderActivities()">
+              <option value="">全部組織</option>
+              <option value="功德會">功德會</option>
+              <option value="基金會">基金會</option>
+            </select>
+            <select id="act-status-filter" onchange="renderActivities()">
+              <option value="">全部狀態</option>
+              <option value="籌備中">籌備中</option>
+              <option value="進行中">進行中</option>
+              <option value="已完成">已完成</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" onclick="openModal('modal-add-activity')">＋ 新增活動</button>
+        </div>
+        <div id="activities-list"></div>
+      </div>
+    </div>
+
+    <!-- ===== VOLUNTEERS ===== -->
+    <div id="page-volunteers" class="page">
+      <div class="section-title">🤝 志工管理</div>
+      <div class="card">
+        <div class="card-header">
+          <div class="search-bar">
+            <input type="text" id="vol-search" placeholder="🔍 搜尋志工..." oninput="renderVolunteers()">
+            <select id="vol-org-filter" onchange="renderVolunteers()">
+              <option value="">全部組織</option>
+              <option value="功德會">功德會</option>
+              <option value="基金會">基金會</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" onclick="openModal('modal-add-volunteer')">＋ 登記志工</button>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>志工編號</th><th>姓名</th><th>組織</th><th>電話</th><th>專長</th><th>服務時數</th><th>狀態</th><th>操作</th></tr></thead>
+            <tbody id="volunteers-list"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== FINANCE ===== -->
+    <div id="page-finance" class="page">
+      <div class="section-title">💰 財務帳目</div>
+
+      <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchTab('fin','income')">收入</button>
+        <button class="tab-btn" onclick="switchTab('fin','expense')">支出</button>
+        <button class="tab-btn" onclick="switchTab('fin','balance')">結餘</button>
+      </div>
+
+      <div id="fin-income" class="tab-panel active">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">💚 收入明細</div>
+            <button class="btn btn-primary" onclick="openModal('modal-add-income')">＋ 新增收入</button>
+          </div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>日期</th><th>項目</th><th>組織</th><th>金額</th><th>類別</th><th>備註</th></tr></thead>
+              <tbody id="income-list"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="fin-expense" class="tab-panel">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">🔴 支出明細</div>
+            <button class="btn btn-danger" onclick="openModal('modal-add-expense')">＋ 新增支出</button>
+          </div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>日期</th><th>項目</th><th>組織</th><th>金額</th><th>類別</th><th>備註</th></tr></thead>
+              <tbody id="expense-list"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="fin-balance" class="tab-panel">
+        <div class="stat-grid">
+          <div class="stat-card"><div class="stat-label">總收入</div><div class="stat-value" id="b-income">$0</div></div>
+          <div class="stat-card red"><div class="stat-label">總支出</div><div class="stat-value" id="b-expense">$0</div></div>
+          <div class="stat-card gold"><div class="stat-label">淨結餘</div><div class="stat-value" id="b-net">$0</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+          <div class="card"><div class="card-title" style="margin-bottom:12px;">🙏 功德會 結餘</div><div id="gd-balance-detail"></div></div>
+          <div class="card"><div class="card-title" style="margin-bottom:12px;">🏛️ 基金會 結餘</div><div id="jj-balance-detail"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== REPORTS ===== -->
+    <div id="page-reports" class="page">
+      <div class="section-title">📊 報表統計</div>
+      <div class="alert alert-success">✅ 以下為系統自動統計，資料即時更新</div>
+      <div class="stat-grid" id="report-stats"></div>
+      <div class="card">
+        <div class="card-title" style="margin-bottom:16px;">📈 捐款人排行榜 Top 10</div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>排名</th><th>姓名</th><th>組織</th><th>總捐款</th><th>次數</th></tr></thead>
+            <tbody id="rank-list"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title" style="margin-bottom:16px;">📋 月度捐款摘要</div>
+        <div id="monthly-report"></div>
+      </div>
+    </div>
+
+    <!-- ===== ORGS ===== -->
+    <div id="page-orgs" class="page">
+      <div class="section-title">🏛️ 組織資料</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div class="card">
+          <div class="card-title" style="margin-bottom:16px;">🙏 功德會 資料</div>
+          <div id="org-gd-info"></div>
+          <button class="btn btn-outline" style="margin-top:14px;" onclick="openModal('modal-edit-org-gd')">✏️ 編輯</button>
+        </div>
+        <div class="card">
+          <div class="card-title" style="margin-bottom:16px;">🏛️ 基金會 資料</div>
+          <div id="org-jj-info"></div>
+          <button class="btn btn-outline" style="margin-top:14px;" onclick="openModal('modal-edit-org-jj')">✏️ 編輯</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SETTINGS ===== -->
+    <div id="page-settings" class="page">
+      <div class="section-title">⚙️ 系統設定</div>
+      <div class="card">
+        <div class="card-title" style="margin-bottom:16px;">💾 資料管理</div>
+        <div class="alert alert-warn">⚠️ 匯出資料請妥善保存，避免資料遺失</div>
+        <div class="btn-row" style="margin-top:12px;">
+          <button class="btn btn-primary" onclick="exportData()">📥 匯出所有資料 (JSON)</button>
+          <button class="btn btn-outline" onclick="document.getElementById('import-file').click()">📤 匯入資料</button>
+          <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
+          <button class="btn btn-danger" onclick="if(confirm('確定清除所有資料？此操作無法復原！'))clearData()">🗑️ 清除所有資料</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title" style="margin-bottom:16px;">ℹ️ 系統資訊</div>
+        <div style="font-size:14px;line-height:2;">
+          <div>系統版本：<strong>v1.0</strong></div>
+          <div>支援組織：<strong>功德會、基金會</strong></div>
+          <div>建立日期：<strong>2026-07-02</strong></div>
+          <div>開發工具：<strong>Claude AI</strong></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /layout -->
+
+<!-- ===== MODALS ===== -->
+
+<!-- 新增會員 -->
+<div class="modal-overlay" id="modal-add-member">
+  <div class="modal">
+    <div class="modal-title">👤 新增會員</div>
+    <div class="form-grid">
+      <div class="form-group"><label>姓名 *</label><input id="m-name" placeholder="請輸入姓名"></div>
+      <div class="form-group"><label>所屬組織 *</label>
+        <select id="m-org"><option value="功德會">功德會</option><option value="基金會">基金會</option></select></div>
+      <div class="form-group"><label>電話</label><input id="m-phone" placeholder="0912-345-678"></div>
+      <div class="form-group"><label>Email</label><input id="m-email" placeholder="email@example.com"></div>
+      <div class="form-group"><label>地址</label><input id="m-addr" placeholder="居住地址"></div>
+      <div class="form-group"><label>加入日期</label><input id="m-date" type="date"></div>
+      <div class="form-group"><label>會員類型</label>
+        <select id="m-type"><option>一般會員</option><option>榮譽會員</option><option>理事</option><option>監事</option><option>執行委員</option></select></div>
+      <div class="form-group"><label>狀態</label>
+        <select id="m-status"><option>正常</option><option>待審</option><option>停止</option></select></div>
+    </div>
+    <div class="form-group" style="margin-top:12px;"><label>備註</label><textarea id="m-note" placeholder="其他備註..."></textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-add-member')">取消</button>
+      <button class="btn btn-primary" onclick="addMember()">✅ 確認新增</button>
+    </div>
+  </div>
+</div>
+
+<!-- 新增捐款 -->
+<div class="modal-overlay" id="modal-add-donation">
+  <div class="modal">
+    <div class="modal-title">💝 登記捐款</div>
+    <div class="form-grid">
+      <div class="form-group"><label>捐款人姓名 *</label><input id="d-name" placeholder="姓名"></div>
+      <div class="form-group"><label>所屬組織 *</label>
+        <select id="d-org"><option value="功德會">功德會</option><option value="基金會">基金會</option></select></div>
+      <div class="form-group"><label>捐款類型</label>
+        <select id="d-type"><option>一般捐款</option><option>超薦捐款</option><option>功德金</option><option>贊助計畫</option><option>物資捐贈</option></select></div>
+      <div class="form-group"><label>金額 (元) *</label><input id="d-amount" type="number" placeholder="0"></div>
+      <div class="form-group"><label>捐款日期</label><input id="d-date" type="date"></div>
+      <div class="form-group"><label>付款方式</label>
+        <select id="d-pay"><option>現金</option><option>轉帳</option><option>支票</option><option>線上支付</option></select></div>
+      <div class="form-group"><label>電話</label><input id="d-phone" placeholder="聯絡電話"></div>
+      <div class="form-group"><label>地址</label><input id="d-addr" placeholder="收據寄送地址"></div>
+    </div>
+    <div class="form-group" style="margin-top:12px;"><label>備註 / 用途說明</label><textarea id="d-note" placeholder="捐款用途或其他說明..."></textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-add-donation')">取消</button>
+      <button class="btn btn-accent" onclick="addDonation()">✅ 確認登記</button>
+    </div>
+  </div>
+</div>
+
+<!-- 收據預覽 -->
+<div class="modal-overlay" id="modal-receipt">
+  <div class="modal">
+    <div class="modal-title">🖨️ 開立捐款收據</div>
+    <div class="form-group" style="margin-bottom:14px;"><label>選擇捐款記錄</label>
+      <select id="receipt-select" onchange="previewReceipt()"><option value="">-- 請選擇 --</option></select></div>
+    <div id="receipt-preview"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-receipt')">關閉</button>
+      <button class="btn btn-primary" onclick="printReceipt()">🖨️ 列印收據</button>
+    </div>
+  </div>
+</div>
+
+<!-- 新增活動 -->
+<div class="modal-overlay" id="modal-add-activity">
+  <div class="modal">
+    <div class="modal-title">📅 新增活動</div>
+    <div class="form-grid">
+      <div class="form-group"><label>活動名稱 *</label><input id="a-name" placeholder="活動名稱"></div>
+      <div class="form-group"><label>所屬組織 *</label>
+        <select id="a-org"><option value="功德會">功德會</option><option value="基金會">基金會</option></select></div>
+      <div class="form-group"><label>活動類型</label>
+        <select id="a-type"><option>法會</option><option>慈善義賣</option><option>捐血</option><option>淨山淨灘</option><option>訪貧慰老</option><option>文化教育</option><option>其他</option></select></div>
+      <div class="form-group"><label>狀態</label>
+        <select id="a-status"><option>籌備中</option><option>進行中</option><option>已完成</option></select></div>
+      <div class="form-group"><label>開始日期</label><input id="a-start" type="date"></div>
+      <div class="form-group"><label>結束日期</label><input id="a-end" type="date"></div>
+      <div class="form-group"><label>地點</label><input id="a-loc" placeholder="活動地點"></div>
+      <div class="form-group"><label>預計人數</label><input id="a-count" type="number" placeholder="0"></div>
+      <div class="form-group"><label>負責人</label><input id="a-leader" placeholder="負責人姓名"></div>
+      <div class="form-group"><label>預算 (元)</label><input id="a-budget" type="number" placeholder="0"></div>
+    </div>
+    <div class="form-group" style="margin-top:12px;"><label>活動說明</label><textarea id="a-desc" placeholder="活動詳細說明..."></textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-add-activity')">取消</button>
+      <button class="btn btn-primary" onclick="addActivity()">✅ 確認新增</button>
+    </div>
+  </div>
+</div>
+
+<!-- 新增志工 -->
+<div class="modal-overlay" id="modal-add-volunteer">
+  <div class="modal">
+    <div class="modal-title">🤝 登記志工</div>
+    <div class="form-grid">
+      <div class="form-group"><label>姓名 *</label><input id="v-name" placeholder="姓名"></div>
+      <div class="form-group"><label>所屬組織 *</label>
+        <select id="v-org"><option value="功德會">功德會</option><option value="基金會">基金會</option></select></div>
+      <div class="form-group"><label>電話</label><input id="v-phone" placeholder="聯絡電話"></div>
+      <div class="form-group"><label>Email</label><input id="v-email" placeholder="email"></div>
+      <div class="form-group"><label>專長</label>
+        <select id="v-skill"><option>行政事務</option><option>醫療護理</option><option>文書翻譯</option><option>資訊技術</option><option>廚藝烹飪</option><option>體力勞動</option><option>活動規劃</option><option>其他</option></select></div>
+      <div class="form-group"><label>加入日期</label><input id="v-date" type="date"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-add-volunteer')">取消</button>
+      <button class="btn btn-primary" onclick="addVolunteer()">✅ 確認登記</button>
+    </div>
+  </div>
+</div>
+
+<!-- 新增收入 -->
+<div class="modal-overlay" id="modal-add-income">
+  <div class="modal">
+    <div class="modal-title">💚 新增收入</div>
+    <div class="form-grid">
+      <div class="form-group"><label>項目名稱 *</label><input id="i-name" placeholder="收入項目"></div>
+      <div class="form-group"><label>組織 *</label>
+        <select id="i-org"><option value="功德會">功德會</option><option value="基金會">基金會</option></select></div>
+      <div class="form-group"><label>金額 *</label><input id="i-amount" type="number" placeholder="0"></div>
+      <div class="form-group"><label>日期</label><input id="i-date" type="date"></div>
+      <div class="form-group"><label>類別</label>
+        <select id="i-cat"><option>捐款收入</option><option>活動收入</option><option>政府補助</option><option>其他收入</option></select></div>
+      <div class="form-group"><label>備註</label><input id="i-note" placeholder="備註"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-add-income')">取消</button>
+      <button class="btn btn-primary" onclick="addIncome()">✅ 確認</button>
+    </div>
+  </div>
+</div>
+
+<!-- 新增支出 -->
+<div class="modal-overlay" id="modal-add-expense">
+  <div class="modal">
+    <div class="modal-title">🔴 新增支出</div>
+    <div class="form-grid">
+      <div class="form-group"><label>項目名稱 *</label><input id="e-name" placeholder="支出項目"></div>
+      <div class="form-group"><label>組織 *</label>
+        <select id="e-org"><option value="功德會">功德會</option><option value="基金會">基金會</option></select></div>
+      <div class="form-group"><label>金額 *</label><input id="e-amount" type="number" placeholder="0"></div>
+      <div class="form-group"><label>日期</label><input id="e-date" type="date"></div>
+      <div class="form-group"><label>類別</label>
+        <select id="e-cat"><option>行政費用</option><option>活動費用</option><option>慈善支出</option><option>設備採購</option><option>其他支出</option></select></div>
+      <div class="form-group"><label>備註</label><input id="e-note" placeholder="備註"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal-add-expense')">取消</button>
+      <button class="btn btn-danger" onclick="addExpense()">✅ 確認</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== DATA STORE =====
+let DB = {
+  members: [], donations: [], activities: [], volunteers: [],
+  income: [], expense: [],
+  orgs: {
+    gd: { name: '功德會', fullName: '○○慈善功德會', address: '彰化縣彰化市', phone: '', email: '', established: '', taxId: '', chair: '' },
+    jj: { name: '基金會', fullName: '○○公益基金會', address: '彰化縣彰化市', phone: '', email: '', established: '', taxId: '', chair: '' }
+  },
+  counters: { member: 0, donation: 0, activity: 0, volunteer: 0 }
+};
+let currentOrg = 'all';
+
+function save() { try { localStorage.setItem('charityDB', JSON.stringify(DB)); } catch(e){} }
+function load() {
+  try {
+    const d = localStorage.getItem('charityDB');
+    if (d) DB = JSON.parse(d);
+  } catch(e) {}
+}
+
+// ===== INIT SAMPLE DATA =====
+function initSampleData() {
+  if (DB.members.length > 0) return;
+  const today = new Date().toISOString().split('T')[0];
+  DB.members = [
+    { id: 'M001', name: '王大明', org: '功德會', phone: '0912-111-111', email: 'wang@mail.com', addr: '彰化市', date: '2023-01-15', type: '理事', status: '正常', note: '' },
+    { id: 'M002', name: '李秀英', org: '功德會', phone: '0922-222-222', email: '', addr: '員林市', date: '2023-03-20', type: '一般會員', status: '正常', note: '' },
+    { id: 'M003', name: '張志豪', org: '基金會', phone: '0933-333-333', email: 'chang@mail.com', addr: '彰化市', date: '2022-08-10', type: '榮譽會員', status: '正常', note: '' },
+    { id: 'M004', name: '陳美玲', org: '基金會', phone: '0944-444-444', email: '', addr: '和美鎮', date: '2024-01-05', type: '一般會員', status: '待審', note: '' },
+    { id: 'M005', name: '林建國', org: '功德會', phone: '0955-555-555', email: '', addr: '鹿港鎮', date: '2021-06-01', type: '監事', status: '正常', note: '' },
+  ];
+  DB.donations = [
+    { id: 'R202600001', name: '王大明', org: '功德會', type: '功德金', amount: 10000, date: '2026-06-01', pay: '現金', phone: '0912-111-111', addr: '彰化市', note: '年度功德金' },
+    { id: 'R202600002', name: '匿名善信', org: '功德會', type: '一般捐款', amount: 5000, date: '2026-06-15', pay: '轉帳', phone: '', addr: '', note: '' },
+    { id: 'R202600003', name: '張志豪', org: '基金會', type: '贊助計畫', amount: 50000, date: '2026-05-20', pay: '支票', phone: '0933-333-333', addr: '彰化市', note: '贊助弱勢助學計畫' },
+    { id: 'R202600004', name: '李秀英', org: '功德會', type: '超薦捐款', amount: 3000, date: '2026-07-01', pay: '現金', phone: '0922-222-222', addr: '員林市', note: '' },
+    { id: 'R202600005', name: '林建國', org: '基金會', type: '一般捐款', amount: 20000, date: '2026-06-28', pay: '轉帳', phone: '', addr: '', note: '感恩捐' },
+  ];
+  DB.activities = [
+    { id: 'A001', name: '2026年中元普渡法會', org: '功德會', type: '法會', status: '籌備中', start: '2026-08-01', end: '2026-08-03', loc: '功德會大殿', count: 500, leader: '王大明', budget: 30000, desc: '年度中元法會，廣邀十方善信參加' },
+    { id: 'A002', name: '弱勢家庭助學金發放', org: '基金會', type: '文化教育', status: '進行中', start: '2026-07-01', end: '2026-07-31', loc: '彰化縣各校', count: 100, leader: '張志豪', budget: 200000, desc: '協助弱勢家庭子女獲得助學金' },
+    { id: 'A003', name: '彰化護城河淨灘活動', org: '基金會', type: '淨山淨灘', status: '已完成', start: '2026-05-10', end: '2026-05-10', loc: '彰化護城河', count: 80, leader: '陳美玲', budget: 5000, desc: '環保淨灘，美化彰化' },
+  ];
+  DB.volunteers = [
+    { id: 'V001', name: '黃小芬', org: '功德會', phone: '0911-222-333', email: '', skill: '行政事務', date: '2023-05-01', hours: 120, status: '正常' },
+    { id: 'V002', name: '吳志明', org: '基金會', phone: '0922-333-444', email: '', skill: '資訊技術', date: '2024-02-15', hours: 80, status: '正常' },
+    { id: 'V003', name: '周美華', org: '功德會', phone: '0933-444-555', email: '', skill: '廚藝烹飪', date: '2022-11-01', hours: 200, status: '正常' },
+  ];
+  DB.income = [
+    { id: 1, name: '6月捐款總計', org: '功德會', amount: 18000, date: '2026-06-30', cat: '捐款收入', note: '' },
+    { id: 2, name: '助學金政府補助', org: '基金會', amount: 150000, date: '2026-06-01', cat: '政府補助', note: '教育部補助款' },
+    { id: 3, name: '6月捐款總計', org: '基金會', amount: 70000, date: '2026-06-30', cat: '捐款收入', note: '' },
+  ];
+  DB.expense = [
+    { id: 1, name: '法會場地佈置', org: '功德會', amount: 8000, date: '2026-06-20', cat: '活動費用', note: '預備中元法會' },
+    { id: 2, name: '助學金發放', org: '基金會', amount: 120000, date: '2026-07-01', cat: '慈善支出', note: '' },
+    { id: 3, name: '辦公室水電費', org: '功德會', amount: 2500, date: '2026-06-30', cat: '行政費用', note: '' },
+  ];
+  DB.counters = { member: 5, donation: 5, activity: 3, volunteer: 3 };
+  save();
+}
+
+// ===== ORG FILTER =====
+function switchOrg(org) {
+  currentOrg = org;
+  document.querySelectorAll('.org-btn').forEach(b => b.classList.remove('active'));
+  const labels = { all: '全部組織', gd: '功德會', jj: '基金會' };
+  document.querySelectorAll('.org-btn').forEach(b => {
+    if (b.textContent.includes(labels[org]) || (org === 'all' && b.textContent === '全部')) b.classList.add('active');
+  });
+  document.getElementById('org-label').textContent = labels[org] || '全部組織';
+  renderAll();
+}
+
+function filterByOrg(arr) {
+  if (currentOrg === 'all') return arr;
+  const name = currentOrg === 'gd' ? '功德會' : '基金會';
+  return arr.filter(x => x.org === name);
+}
+
+// ===== PAGE NAV =====
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => {
+    if (n.getAttribute('onclick') && n.getAttribute('onclick').includes(id)) n.classList.add('active');
+  });
+  if (id === 'reports') renderReports();
+  if (id === 'finance') renderFinance();
+  if (id === 'orgs') renderOrgs();
+}
+
+// ===== TABS =====
+function switchTab(group, tab) {
+  document.querySelectorAll(`#fin-income,#fin-expense,#fin-balance`).forEach(p => p.classList.remove('active'));
+  document.getElementById(group + '-' + tab).classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('onclick') && b.getAttribute('onclick').includes(tab));
+  });
+  if (tab === 'balance') renderBalance();
+}
+
+// ===== MODALS =====
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+  if (id === 'modal-receipt') populateReceiptSelect();
+  const today = new Date().toISOString().split('T')[0];
+  document.querySelectorAll(`#${id} input[type=date]`).forEach(el => { if (!el.value) el.value = today; });
+}
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.addEventListener('click', e => {
+  if (e.target.classList.contains('modal-overlay')) e.target.classList.remove('open');
+});
+
+// ===== MEMBERS =====
+function addMember() {
+  const name = document.getElementById('m-name').value.trim();
+  if (!name) { alert('請輸入姓名'); return; }
+  DB.counters.member++;
+  const id = 'M' + String(DB.counters.member).padStart('003', '0');
+  DB.members.push({
+    id, name, org: document.getElementById('m-org').value,
+    phone: document.getElementById('m-phone').value,
+    email: document.getElementById('m-email').value,
+    addr: document.getElementById('m-addr').value,
+    date: document.getElementById('m-date').value,
+    type: document.getElementById('m-type').value,
+    status: document.getElementById('m-status').value,
+    note: document.getElementById('m-note').value
+  });
+  save(); closeModal('modal-add-member'); renderMembers(); updateStats();
+  ['m-name','m-phone','m-email','m-addr','m-note'].forEach(id => document.getElementById(id).value = '');
+}
+
+function deleteMember(id) {
+  if (!confirm('確定刪除此會員？')) return;
+  DB.members = DB.members.filter(m => m.id !== id);
+  save(); renderMembers(); updateStats();
+}
+
+function renderMembers() {
+  const search = (document.getElementById('member-search').value || '').toLowerCase();
+  const orgF = document.getElementById('member-org-filter').value;
+  const statF = document.getElementById('member-status-filter').value;
+  let data = DB.members.filter(m =>
+    (!search || m.name.includes(search) || (m.phone && m.phone.includes(search))) &&
+    (!orgF || m.org === orgF) && (!statF || m.status === statF)
+  );
+  if (currentOrg !== 'all') data = data.filter(m => m.org === (currentOrg === 'gd' ? '功德會' : '基金會'));
+  const totalDonate = (name) => DB.donations.filter(d => d.name === name).reduce((s, d) => s + Number(d.amount), 0);
+  document.getElementById('members-list').innerHTML = data.map(m => `
+    <tr>
+      <td>${m.id}</td><td><strong>${m.name}</strong></td>
+      <td><span class="org-tag ${m.org === '功德會' ? 'org-gd' : 'org-jj'}">${m.org}</span></td>
+      <td>${m.phone || '-'}</td><td>${m.date || '-'}</td>
+      <td><span class="badge ${m.status === '正常' ? 'badge-green' : m.status === '待審' ? 'badge-yellow' : 'badge-red'}">${m.status}</span></td>
+      <td>$${totalDonate(m.name).toLocaleString()}</td>
+      <td><button class="btn btn-sm btn-danger" onclick="deleteMember('${m.id}')">刪除</button></td>
+    </tr>`).join('');
+}
+
+// ===== DONATIONS =====
+function addDonation() {
+  const name = document.getElementById('d-name').value.trim();
+  const amount = Number(document.getElementById('d-amount').value);
+  if (!name || !amount) { alert('請填寫姓名與金額'); return; }
+  DB.counters.donation++;
+  const year = new Date().getFullYear();
+  const id = 'R' + year + String(DB.counters.donation).padStart(5, '0');
+  DB.donations.push({
+    id, name, org: document.getElementById('d-org').value,
+    type: document.getElementById('d-type').value, amount,
+    date: document.getElementById('d-date').value,
+    pay: document.getElementById('d-pay').value,
+    phone: document.getElementById('d-phone').value,
+    addr: document.getElementById('d-addr').value,
+    note: document.getElementById('d-note').value
+  });
+  save(); closeModal('modal-add-donation'); renderDonations(); updateStats();
+}
+
+function renderDonations() {
+  const search = (document.getElementById('donate-search').value || '').toLowerCase();
+  const orgF = document.getElementById('donate-org-filter').value;
+  const typeF = document.getElementById('donate-type-filter').value;
+  let data = DB.donations.filter(d =>
+    (!search || d.name.toLowerCase().includes(search)) &&
+    (!orgF || d.org === orgF) && (!typeF || d.type === typeF)
+  );
+  if (currentOrg !== 'all') data = data.filter(d => d.org === (currentOrg === 'gd' ? '功德會' : '基金會'));
+  document.getElementById('donations-list').innerHTML = data.map(d => `
+    <tr>
+      <td style="font-size:12px;">${d.id}</td>
+      <td><strong>${d.name}</strong></td>
+      <td><span class="org-tag ${d.org === '功德會' ? 'org-gd' : 'org-jj'}">${d.org}</span></td>
+      <td><span class="badge badge-blue">${d.type}</span></td>
+      <td style="color:var(--success);font-weight:700;">$${Number(d.amount).toLocaleString()}</td>
+      <td>${d.date || '-'}</td>
+      <td style="font-size:12px;color:var(--text-muted);">${d.note || '-'}</td>
+      <td><button class="btn btn-sm btn-outline" onclick="quickReceipt('${d.id}')">收據</button></td>
+    </tr>`).join('');
+}
+
+function populateReceiptSelect() {
+  const sel = document.getElementById('receipt-select');
+  sel.innerHTML = '<option value="">-- 請選擇 --</option>' +
+    DB.donations.map(d => `<option value="${d.id}">${d.id} - ${d.name} $${Number(d.amount).toLocaleString()}</option>`).join('');
+}
+
+function quickReceipt(id) {
+  openModal('modal-receipt');
+  setTimeout(() => {
+    document.getElementById('receipt-select').value = id;
+    previewReceipt();
+  }, 50);
+}
+
+function previewReceipt() {
+  const id = document.getElementById('receipt-select').value;
+  const el = document.getElementById('receipt-preview');
+  if (!id) { el.innerHTML = ''; return; }
+  const d = DB.donations.find(x => x.id === id);
+  if (!d) return;
+  const org = DB.orgs[d.org === '功德會' ? 'gd' : 'jj'];
+  el.innerHTML = `<div class="receipt-box">
+    <div class="receipt-title">捐款收據</div>
+    <div class="receipt-org">${org.fullName}</div>
+    <div class="receipt-row"><span>收據編號</span><span>${d.id}</span></div>
+    <div class="receipt-row"><span>捐款人</span><span>${d.name}</span></div>
+    <div class="receipt-row"><span>捐款類型</span><span>${d.type}</span></div>
+    <div class="receipt-row"><span>付款方式</span><span>${d.pay}</span></div>
+    <div class="receipt-row"><span>捐款日期</span><span>${d.date}</span></div>
+    ${d.note ? `<div class="receipt-row"><span>用途</span><span>${d.note}</span></div>` : ''}
+    <div class="receipt-total"><span>捐款金額</span><span>NT$ ${Number(d.amount).toLocaleString()} 元整</span></div>
+    <div style="margin-top:14px;font-size:12px;color:var(--text-muted);text-align:center;">感謝您的愛心捐助，功德無量！</div>
+  </div>`;
+}
+
+function printReceipt() {
+  const content = document.getElementById('receipt-preview').innerHTML;
+  if (!content) { alert('請先選擇捐款記錄'); return; }
+  const win = window.open('', '_blank');
+  win.document.write(`<html><head><title>捐款收據</title><style>
+    body{font-family:'Microsoft JhengHei',Arial;padding:40px;max-width:600px;margin:0 auto;}
+    .receipt-box{border:2px dashed #2e6b4f;border-radius:10px;padding:30px;}
+    .receipt-title{text-align:center;font-size:22px;font-weight:700;margin-bottom:8px;}
+    .receipt-org{text-align:center;color:#666;font-size:14px;margin-bottom:20px;}
+    .receipt-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed #ddd;font-size:15px;}
+    .receipt-total{display:flex;justify-content:space-between;padding:12px 0 0;font-size:18px;font-weight:700;color:#2e6b4f;}
+  </style></head><body>${content}<div style="text-align:center;margin-top:20px;color:#999;font-size:12px;">列印日期：${new Date().toLocaleDateString()}</div></body></html>`);
+  win.document.close(); win.print();
+}
+
+// ===== ACTIVITIES =====
+function addActivity() {
+  const name = document.getElementById('a-name').value.trim();
+  if (!name) { alert('請輸入活動名稱'); return; }
+  DB.counters.activity++;
+  DB.activities.push({
+    id: 'A' + String(DB.counters.activity).padStart(3, '0'),
+    name, org: document.getElementById('a-org').value,
+    type: document.getElementById('a-type').value,
+    status: document.getElementById('a-status').value,
+    start: document.getElementById('a-start').value,
+    end: document.getElementById('a-end').value,
+    loc: document.getElementById('a-loc').value,
+    count: Number(document.getElementById('a-count').value) || 0,
+    leader: document.getElementById('a-leader').value,
+    budget: Number(document.getElementById('a-budget').value) || 0,
+    desc: document.getElementById('a-desc').value
+  });
+  save(); closeModal('modal-add-activity'); renderActivities(); updateStats();
+}
+
+function renderActivities() {
+  const search = (document.getElementById('act-search').value || '').toLowerCase();
+  const orgF = document.getElementById('act-org-filter').value;
+  const statF = document.getElementById('act-status-filter').value;
+  let data = DB.activities.filter(a =>
+    (!search || a.name.toLowerCase().includes(search)) &&
+    (!orgF || a.org === orgF) && (!statF || a.status === statF)
+  );
+  if (currentOrg !== 'all') data = data.filter(a => a.org === (currentOrg === 'gd' ? '功德會' : '基金會'));
+  const statusColor = { '籌備中': 'badge-yellow', '進行中': 'badge-green', '已完成': 'badge-gray' };
+  document.getElementById('activities-list').innerHTML = data.map(a => `
+    <div class="card" style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-size:16px;font-weight:700;">${a.name}</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">
+            <span class="org-tag ${a.org === '功德會' ? 'org-gd' : 'org-jj'}">${a.org}</span>
+            　${a.type}　📍${a.loc || '-'}　👤${a.leader || '-'}
+          </div>
+          <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">
+            📅 ${a.start} ~ ${a.end}　👥預計 ${a.count} 人　💰預算 $${Number(a.budget).toLocaleString()}
+          </div>
+          ${a.desc ? `<div style="font-size:13px;margin-top:6px;">${a.desc}</div>` : ''}
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+          <span class="badge ${statusColor[a.status] || 'badge-gray'}">${a.status}</span>
+          <button class="btn btn-sm btn-danger" onclick="deleteActivity('${a.id}')">刪除</button>
+        </div>
+      </div>
+    </div>`).join('') || '<div style="color:var(--text-muted);text-align:center;padding:20px;">目前無活動記錄</div>';
+}
+
+function deleteActivity(id) {
+  if (!confirm('確定刪除此活動？')) return;
+  DB.activities = DB.activities.filter(a => a.id !== id);
+  save(); renderActivities(); updateStats();
+}
+
+// ===== VOLUNTEERS =====
+function addVolunteer() {
+  const name = document.getElementById('v-name').value.trim();
+  if (!name) { alert('請輸入姓名'); return; }
+  DB.counters.volunteer++;
+  DB.volunteers.push({
+    id: 'V' + String(DB.counters.volunteer).padStart(3, '0'),
+    name, org: document.getElementById('v-org').value,
+    phone: document.getElementById('v-phone').value,
+    email: document.getElementById('v-email').value,
+    skill: document.getElementById('v-skill').value,
+    date: document.getElementById('v-date').value,
+    hours: 0, status: '正常'
+  });
+  save(); closeModal('modal-add-volunteer'); renderVolunteers(); updateStats();
+}
+
+function renderVolunteers() {
+  const search = (document.getElementById('vol-search').value || '').toLowerCase();
+  const orgF = document.getElementById('vol-org-filter').value;
+  let data = DB.volunteers.filter(v =>
+    (!search || v.name.toLowerCase().includes(search)) && (!orgF || v.org === orgF)
+  );
+  if (currentOrg !== 'all') data = data.filter(v => v.org === (currentOrg === 'gd' ? '功德會' : '基金會'));
+  document.getElementById('volunteers-list').innerHTML = data.map(v => `
+    <tr>
+      <td>${v.id}</td><td><strong>${v.name}</strong></td>
+      <td><span class="org-tag ${v.org === '功德會' ? 'org-gd' : 'org-jj'}">${v.org}</span></td>
+      <td>${v.phone || '-'}</td><td>${v.skill}</td>
+      <td>${v.hours} 小時</td>
+      <td><span class="badge badge-green">${v.status}</span></td>
+      <td><button class="btn btn-sm btn-danger" onclick="deleteVol('${v.id}')">刪除</button></td>
+    </tr>`).join('');
+}
+
+function deleteVol(id) {
+  if (!confirm('確定刪除此志工？')) return;
+  DB.volunteers = DB.volunteers.filter(v => v.id !== id);
+  save(); renderVolunteers(); updateStats();
+}
+
+// ===== FINANCE =====
+function addIncome() {
+  const name = document.getElementById('i-name').value.trim();
+  const amount = Number(document.getElementById('i-amount').value);
+  if (!name || !amount) { alert('請填寫項目與金額'); return; }
+  DB.income.push({ id: Date.now(), name, org: document.getElementById('i-org').value, amount, date: document.getElementById('i-date').value, cat: document.getElementById('i-cat').value, note: document.getElementById('i-note').value });
+  save(); closeModal('modal-add-income'); renderFinance();
+}
+
+function addExpense() {
+  const name = document.getElementById('e-name').value.trim();
+  const amount = Number(document.getElementById('e-amount').value);
+  if (!name || !amount) { alert('請填寫項目與金額'); return; }
+  DB.expense.push({ id: Date.now(), name, org: document.getElementById('e-org').value, amount, date: document.getElementById('e-date').value, cat: document.getElementById('e-cat').value, note: document.getElementById('e-note').value });
+  save(); closeModal('modal-add-expense'); renderFinance();
+}
+
+function renderFinance() {
+  const incomeData = currentOrg === 'all' ? DB.income : DB.income.filter(x => x.org === (currentOrg === 'gd' ? '功德會' : '基金會'));
+  const expenseData = currentOrg === 'all' ? DB.expense : DB.expense.filter(x => x.org === (currentOrg === 'gd' ? '功德會' : '基金會'));
+  document.getElementById('income-list').innerHTML = incomeData.map(x => `
+    <tr><td>${x.date}</td><td>${x.name}</td>
+    <td><span class="org-tag ${x.org === '功德會' ? 'org-gd' : 'org-jj'}">${x.org}</span></td>
+    <td style="color:var(--success);font-weight:700;">+$${Number(x.amount).toLocaleString()}</td>
+    <td>${x.cat}</td><td>${x.note || '-'}</td></tr>`).join('');
+  document.getElementById('expense-list').innerHTML = expenseData.map(x => `
+    <tr><td>${x.date}</td><td>${x.name}</td>
+    <td><span class="org-tag ${x.org === '功德會' ? 'org-gd' : 'org-jj'}">${x.org}</span></td>
+    <td style="color:var(--danger);font-weight:700;">-$${Number(x.amount).toLocaleString()}</td>
+    <td>${x.cat}</td><td>${x.note || '-'}</td></tr>`).join('');
+}
+
+function renderBalance() {
+  const totalInc = DB.income.reduce((s, x) => s + Number(x.amount), 0);
+  const totalExp = DB.expense.reduce((s, x) => s + Number(x.amount), 0);
+  document.getElementById('b-income').textContent = '$' + totalInc.toLocaleString();
+  document.getElementById('b-expense').textContent = '$' + totalExp.toLocaleString();
+  const net = totalInc - totalExp;
+  document.getElementById('b-net').textContent = '$' + net.toLocaleString();
+
+  const gdInc = DB.income.filter(x => x.org === '功德會').reduce((s, x) => s + Number(x.amount), 0);
+  const gdExp = DB.expense.filter(x => x.org === '功德會').reduce((s, x) => s + Number(x.amount), 0);
+  const jjInc = DB.income.filter(x => x.org === '基金會').reduce((s, x) => s + Number(x.amount), 0);
+  const jjExp = DB.expense.filter(x => x.org === '基金會').reduce((s, x) => s + Number(x.amount), 0);
+  document.getElementById('gd-balance-detail').innerHTML = `
+    <div class="receipt-row"><span>收入</span><span style="color:var(--success);">$${gdInc.toLocaleString()}</span></div>
+    <div class="receipt-row"><span>支出</span><span style="color:var(--danger);">$${gdExp.toLocaleString()}</span></div>
+    <div class="receipt-total"><span>結餘</span><span>$${(gdInc - gdExp).toLocaleString()}</span></div>`;
+  document.getElementById('jj-balance-detail').innerHTML = `
+    <div class="receipt-row"><span>收入</span><span style="color:var(--success);">$${jjInc.toLocaleString()}</span></div>
+    <div class="receipt-row"><span>支出</span><span style="color:var(--danger);">$${jjExp.toLocaleString()}</span></div>
+    <div class="receipt-total"><span>結餘</span><span>$${(jjInc - jjExp).toLocaleString()}</span></div>`;
+}
+
+// ===== REPORTS =====
+function renderReports() {
+  const totalDonate = DB.donations.reduce((s, d) => s + Number(d.amount), 0);
+  const gdDonate = DB.donations.filter(d => d.org === '功德會').reduce((s, d) => s + Number(d.amount), 0);
+  const jjDonate = DB.donations.filter(d => d.org === '基金會').reduce((s, d) => s + Number(d.amount), 0);
+  document.getElementById('report-stats').innerHTML = `
+    <div class="stat-card"><div class="stat-label">總捐款金額</div><div class="stat-value">$${totalDonate.toLocaleString()}</div></div>
+    <div class="stat-card"><div class="stat-label">功德會捐款</div><div class="stat-value">$${gdDonate.toLocaleString()}</div></div>
+    <div class="stat-card blue"><div class="stat-label">基金會捐款</div><div class="stat-value">$${jjDonate.toLocaleString()}</div></div>
+    <div class="stat-card gold"><div class="stat-label">捐款人次</div><div class="stat-value">${DB.donations.length}</div></div>`;
+
+  // Rank
+  const rankMap = {};
+  DB.donations.forEach(d => {
+    if (!rankMap[d.name]) rankMap[d.name] = { name: d.name, org: d.org, total: 0, count: 0 };
+    rankMap[d.name].total += Number(d.amount);
+    rankMap[d.name].count++;
+  });
+  const ranked = Object.values(rankMap).sort((a, b) => b.total - a.total).slice(0, 10);
+  document.getElementById('rank-list').innerHTML = ranked.map((r, i) => `
+    <tr>
+      <td><strong>${i + 1}</strong></td>
+      <td>${r.name}</td>
+      <td><span class="org-tag ${r.org === '功德會' ? 'org-gd' : 'org-jj'}">${r.org}</span></td>
+      <td style="color:var(--success);font-weight:700;">$${r.total.toLocaleString()}</td>
+      <td>${r.count} 次</td>
+    </tr>`).join('');
+
+  // Monthly
+  const monthly = {};
+  DB.donations.forEach(d => {
+    const ym = (d.date || '').substring(0, 7);
+    if (!ym) return;
+    if (!monthly[ym]) monthly[ym] = 0;
+    monthly[ym] += Number(d.amount);
+  });
+  const months = Object.keys(monthly).sort().reverse();
+  document.getElementById('monthly-report').innerHTML = months.length ? `<table style="width:100%;border-collapse:collapse;">
+    <thead><tr><th style="padding:8px;background:#f0f8f0;text-align:left;">年月</th><th style="padding:8px;background:#f0f8f0;text-align:left;">捐款金額</th></tr></thead>
+    <tbody>${months.map(m => `<tr><td style="padding:8px;border-bottom:1px solid #eee;">${m}</td><td style="padding:8px;border-bottom:1px solid #eee;color:var(--success);font-weight:700;">$${monthly[m].toLocaleString()}</td></tr>`).join('')}</tbody>
+  </table>` : '<div style="color:var(--text-muted);">暫無資料</div>';
+}
+
+// ===== ORGS =====
+function renderOrgs() {
+  ['gd', 'jj'].forEach(key => {
+    const o = DB.orgs[key];
+    document.getElementById(`org-${key}-info`).innerHTML = `
+      <div class="receipt-row"><span>機構名稱</span><span>${o.fullName}</span></div>
+      <div class="receipt-row"><span>地址</span><span>${o.address || '-'}</span></div>
+      <div class="receipt-row"><span>電話</span><span>${o.phone || '-'}</span></div>
+      <div class="receipt-row"><span>Email</span><span>${o.email || '-'}</span></div>
+      <div class="receipt-row"><span>成立日期</span><span>${o.established || '-'}</span></div>
+      <div class="receipt-row"><span>統一編號</span><span>${o.taxId || '-'}</span></div>
+      <div class="receipt-row"><span>負責人</span><span>${o.chair || '-'}</span></div>`;
+  });
+}
+
+// ===== STATS / DASHBOARD =====
+function updateStats() {
+  const mems = filterByOrg(DB.members).filter(m => m.status === '正常').length;
+  const now = new Date().toISOString().substring(0, 7);
+  const monthDonate = filterByOrg(DB.donations).filter(d => (d.date || '').startsWith(now)).reduce((s, d) => s + Number(d.amount), 0);
+  const acts = filterByOrg(DB.activities).filter(a => a.status !== '已完成').length;
+  const vols = filterByOrg(DB.volunteers).length;
+  document.getElementById('s-members').textContent = mems;
+  document.getElementById('s-donate').textContent = '$' + monthDonate.toLocaleString();
+  document.getElementById('s-acts').textContent = acts;
+  document.getElementById('s-vols').textContent = vols;
+
+  // Org comparison
+  const gdMem = DB.members.filter(m => m.org === '功德會').length;
+  const jjMem = DB.members.filter(m => m.org === '基金會').length;
+  const total = gdMem + jjMem || 1;
+  document.getElementById('gd-bar').style.width = (gdMem / total * 100) + '%';
+  document.getElementById('jj-bar').style.width = (jjMem / total * 100) + '%';
+  const gdDonate = DB.donations.filter(d => d.org === '功德會').reduce((s, d) => s + Number(d.amount), 0);
+  const jjDonate = DB.donations.filter(d => d.org === '基金會').reduce((s, d) => s + Number(d.amount), 0);
+  document.getElementById('gd-stat').textContent = `會員 ${gdMem} 人 ｜ 累積捐款 $${gdDonate.toLocaleString()}`;
+  document.getElementById('jj-stat').textContent = `會員 ${jjMem} 人 ｜ 累積捐款 $${jjDonate.toLocaleString()}`;
+
+  // Dash tables
+  const recent = [...DB.donations].sort((a, b) => (b.date || '') > (a.date || '') ? 1 : -1).slice(0, 5);
+  document.getElementById('dash-donate-list').innerHTML = recent.map(d => `
+    <tr><td>${d.name}</td><td style="color:var(--success);font-weight:700;">$${Number(d.amount).toLocaleString()}</td>
+    <td>${d.date || '-'}</td><td><span class="org-tag ${d.org === '功德會' ? 'org-gd' : 'org-jj'}">${d.org}</span></td></tr>`).join('');
+
+  const upcoming = DB.activities.filter(a => a.status !== '已完成').slice(0, 4);
+  const statusColor = { '籌備中': 'badge-yellow', '進行中': 'badge-green', '已完成': 'badge-gray' };
+  document.getElementById('dash-act-list').innerHTML = upcoming.map(a => `
+    <div style="padding:10px 0;border-bottom:1px solid var(--border);">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-weight:600;font-size:14px;">${a.name}</div>
+          <div style="font-size:12px;color:var(--text-muted);">${a.start} ｜ ${a.loc || '-'}</div>
+        </div>
+        <span class="badge ${statusColor[a.status]}">${a.status}</span>
+      </div>
+    </div>`).join('') || '<div style="color:var(--text-muted);text-align:center;padding:20px;">暫無活動</div>';
+}
+
+function renderAll() {
+  renderMembers(); renderDonations(); renderActivities(); renderVolunteers(); updateStats();
+}
+
+// ===== EXPORT / IMPORT =====
+function exportData() {
+  const blob = new Blob([JSON.stringify(DB, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url;
+  a.download = `慈善管理系統資料_${new Date().toISOString().split('T')[0]}.json`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+function importData(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      DB = JSON.parse(ev.target.result);
+      save(); renderAll(); alert('✅ 資料匯入成功！');
+    } catch { alert('❌ 檔案格式錯誤'); }
+  };
+  reader.readAsText(file);
+}
+
+function clearData() {
+  DB = { members: [], donations: [], activities: [], volunteers: [], income: [], expense: [], orgs: DB.orgs, counters: { member: 0, donation: 0, activity: 0, volunteer: 0 } };
+  save(); renderAll(); alert('✅ 資料已清除');
+}
+
+// ===== INIT =====
+document.getElementById('today-date').textContent = new Date().toLocaleDateString('zh-TW');
+document.getElementById('update-time').textContent = new Date().toLocaleTimeString('zh-TW');
+
+load();
+initSampleData();
+renderAll();
+</script>
+</body>
+</html>
