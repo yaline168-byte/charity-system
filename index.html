@@ -698,10 +698,33 @@ let DB = {
 let currentOrg = 'all';
 
 function save() { try { localStorage.setItem('charityDB', JSON.stringify(DB)); } catch(e){} }
+
+// Fills in any missing keys with defaults so old/partial saved data
+// (older version, hand-edited, or an incomplete imported file) can't
+// leave DB.* undefined and crash the render functions.
+function normalizeDB(data) {
+  const defaults = {
+    members: [], donations: [], activities: [], volunteers: [],
+    income: [], expense: [],
+    orgs: {
+      gd: { name: '功德會', fullName: '○○慈善功德會', address: '彰化縣彰化市', phone: '', email: '', established: '', taxId: '', chair: '' },
+      jj: { name: '基金會', fullName: '○○公益基金會', address: '彰化縣彰化市', phone: '', email: '', established: '', taxId: '', chair: '' }
+    },
+    counters: { member: 0, donation: 0, activity: 0, volunteer: 0 }
+  };
+  const merged = Object.assign({}, defaults, data);
+  merged.orgs = Object.assign({}, defaults.orgs, data && data.orgs);
+  merged.counters = Object.assign({}, defaults.counters, data && data.counters);
+  ['members', 'donations', 'activities', 'volunteers', 'income', 'expense'].forEach(key => {
+    if (!Array.isArray(merged[key])) merged[key] = [];
+  });
+  return merged;
+}
+
 function load() {
   try {
     const d = localStorage.getItem('charityDB');
-    if (d) DB = JSON.parse(d);
+    if (d) DB = normalizeDB(JSON.parse(d));
   } catch(e) {}
 }
 
@@ -805,7 +828,7 @@ function addMember() {
   const name = document.getElementById('m-name').value.trim();
   if (!name) { alert('請輸入姓名'); return; }
   DB.counters.member++;
-  const id = 'M' + String(DB.counters.member).padStart('003', '0');
+  const id = 'M' + String(DB.counters.member).padStart(3, '0');
   DB.members.push({
     id, name, org: document.getElementById('m-org').value,
     phone: document.getElementById('m-phone').value,
@@ -1213,7 +1236,7 @@ function importData(e) {
   const reader = new FileReader();
   reader.onload = ev => {
     try {
-      DB = JSON.parse(ev.target.result);
+      DB = normalizeDB(JSON.parse(ev.target.result));
       save(); renderAll(); alert('✅ 資料匯入成功！');
     } catch { alert('❌ 檔案格式錯誤'); }
   };
