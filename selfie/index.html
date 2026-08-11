@@ -338,7 +338,7 @@
 
 <div id="app">
   <header id="bar">
-    <div class="brand"><b>光室</b><i>Darkroom</i><i id="ver">v13</i></div>
+    <div class="brand"><b>光室</b><i>Darkroom</i><i id="ver">v14</i></div>
     <div class="bar-acts">
       <button id="btnReset" class="ghost" disabled>重設</button>
       <button id="btnExport" class="primary" disabled>儲存照片</button>
@@ -675,7 +675,7 @@ function guidedFields(d, w, h, strength, maxField) {
   const lh = Math.max(1, Math.round(h * scale));
   const n = lw * lh;
 
-  const [Y, R, G, B, YY, tmp, mY, mYY, mR, mG, mB, A, bR, bG, bB, cR, cG, cB] = pool(n, 18);
+  const [Y, R, G, B, YY, tmp, mY, mYY, mR, mG, mB, A, bR, bG, bB, cR, cG, cB, W, WT, bW, cW] = pool(n, 22);
   let skinSum = 0, skinN = 0;
 
   for (let y = 0; y < lh; y++) {
@@ -688,11 +688,14 @@ function guidedFields(d, w, h, strength, maxField) {
       const yy = (r * 299 + g * 587 + b * 114) / 1000;
       Y[p] = yy; YY[p] = yy * yy;
 
-      // 順手統計膚色區的平均亮度，用來自動校正臉部曝光
+      // 膚色權重：基準層只統計皮膚，同時用來校正臉部曝光
       const rb = r - b;
-      if (r > 45 && r >= g && g >= b && rb > 6 && rb < 125) {
-        skinSum += yy; skinN++;
+      let sk = 0;
+      if (r > 45 && r >= g && g >= b) {
+        sk = clamp01((rb - 6) / 18) * clamp01((125 - rb) / 45) * clamp01((yy - 78) / 34);
       }
+      W[p] = sk;
+      if (sk > 0.5) { skinSum += yy; skinN++; }
     }
   }
 
@@ -710,21 +713,36 @@ function guidedFields(d, w, h, strength, maxField) {
     A[p] = v / (v + eps);
   }
 
-  // 大半徑的基準層：代表「這一帶皮膚原本該有的亮度」。
-  // 黑眼圈、法令紋陰影、顴骨暗塊都是相對這個基準偏暗，用它來提亮。
-  // 半徑必須明顯大於要修的暗塊，否則基準會跟著陰影一起沉下去，
-  // 偏差就量不出來。黑眼圈、法令紋大約是臉寬的 1/5，取 1/7 邊長。
-  const brad = Math.max(24, Math.round(Math.min(lw, lh) / 7));
-  boxF(R, bR, tmp, lw, lh, brad);
-  boxF(G, bG, tmp, lw, lh, brad);
-  boxF(B, bB, tmp, lw, lh, brad);
+  /* 基準層：代表「這一帶皮膚原本該有的亮度與顏色」。
+     只能統計皮膚像素 —— 把背景一起平均進去的話，臉旁邊一片白牆
+     就會把基準拉到接近白色，接著勻膚會拿它去「提亮」、勻色會拿它
+     去「校正」，結果把整張臉推成慘白。背景越亮洗得越白。 */
+  function skinBase(rad, oR, oG, oB, wBuf) {
+    boxF(W, wBuf, tmp, lw, lh, rad);
+    for (let p = 0; p < n; p++) WT[p] = W[p] * R[p];
+    boxF(WT, oR, tmp, lw, lh, rad);
+    for (let p = 0; p < n; p++) WT[p] = W[p] * G[p];
+    boxF(WT, oG, tmp, lw, lh, rad);
+    for (let p = 0; p < n; p++) WT[p] = W[p] * B[p];
+    boxF(WT, oB, tmp, lw, lh, rad);
+    for (let p = 0; p < n; p++) {
+      const wv = wBuf[p];
+      if (wv > 0.05) {
+        oR[p] /= wv; oG[p] /= wv; oB[p] /= wv;
+      } else {
+        // 附近沒有皮膚可參考，就用自身值 —— 修正量自然為零
+        oR[p] = R[p]; oG[p] = G[p]; oB[p] = B[p];
+      }
+    }
+  }
 
-  // 顏色基準要比亮度基準更寬：紅斑範圍大，半徑不夠的話基準會被
-  // 紅斑本身染紅，偏差就量不出來。
+  // 半徑必須明顯大於要修的暗塊，否則基準會跟著陰影一起沉下去。
+  const brad = Math.max(24, Math.round(Math.min(lw, lh) / 7));
+  skinBase(brad, bR, bG, bB, bW);
+
+  // 顏色基準更寬：紅斑範圍大，半徑不夠基準會被紅斑本身染紅。
   const crad = Math.max(brad * 2, Math.round(Math.min(lw, lh) / 3.5));
-  boxF(R, cR, tmp, lw, lh, crad);
-  boxF(G, cG, tmp, lw, lh, crad);
-  boxF(B, cB, tmp, lw, lh, crad);
+  skinBase(crad, cR, cG, cB, cW);
 
   // 膚色不足時回傳 0，呼叫端就會跳過自動曝光，避免對著非人臉亂調
   const skinY = skinN > n * 0.03 ? skinSum / skinN : 0;
@@ -856,10 +874,10 @@ function process(imgData, p, live) {
   let autoGain = 1;
   const autoExp = (p.autoexp || 0) / 100;
   if (autoExp > 0 && GF && GF.skinY > 0) {
-    const target = 186;
+    const target = 176;
     const raw = target / GF.skinY;
     // 只做溫和修正，且不過度壓暗已經夠亮的臉
-    autoGain = 1 + (Math.min(1.55, Math.max(0.88, raw)) - 1) * autoExp;
+    autoGain = 1 + (Math.min(1.38, Math.max(0.85, raw)) - 1) * autoExp;
   }
 
   // 對比查表
@@ -1527,8 +1545,8 @@ function updateSkinMask(v) {
 function liveFilter() {
   let bf = 1 + (P.bright / 100) * 0.35;
   if (P.autoexp > 0 && LIVE.skinY > 0) {
-    const raw = 186 / LIVE.skinY;
-    bf *= 1 + (Math.min(1.55, Math.max(0.88, raw)) - 1) * (P.autoexp / 100);
+    const raw = 176 / LIVE.skinY;
+    bf *= 1 + (Math.min(1.38, Math.max(0.85, raw)) - 1) * (P.autoexp / 100);
   }
   const c = 1 + (P.contrast / 100) * 0.4;
   const s = 1 + (P.sat / 100) * 0.6;
