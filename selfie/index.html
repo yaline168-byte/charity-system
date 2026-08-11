@@ -338,7 +338,7 @@
 
 <div id="app">
   <header id="bar">
-    <div class="brand"><b>光室</b><i>Darkroom</i><i id="ver">v10</i></div>
+    <div class="brand"><b>光室</b><i>Darkroom</i><i id="ver">v11</i></div>
     <div class="bar-acts">
       <button id="btnReset" class="ghost" disabled>重設</button>
       <button id="btnExport" class="primary" disabled>儲存照片</button>
@@ -633,9 +633,19 @@ const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
    係數本身是平滑的場，所以在低解析度算完再放大幾乎無損，
    記憶體和運算量都降到可以在手機上跑。
    ----------------------------------------------------------- */
-function boxF(src, w, h, r) {
-  const n = w * h;
-  const tmp = new Float32Array(n), out = new Float32Array(n);
+/* 即時預覽每秒要跑三十次，不能每幀配置新陣列 —— 那會讓 GC 追著跑、
+   畫面一頓一頓。這裡把所有工作緩衝區集中管理，尺寸不變就重複使用。 */
+const POOL = { n: -1, a: null };
+function pool(n, count) {
+  if (POOL.n !== n) {
+    POOL.n = n;
+    POOL.a = [];
+  }
+  while (POOL.a.length < count) POOL.a.push(new Float32Array(n));
+  return POOL.a;
+}
+
+function boxF(src, out, tmp, w, h, r) {
   const span = r * 2 + 1;
   for (let y = 0; y < h; y++) {
     const row = y * w;
@@ -654,18 +664,16 @@ function boxF(src, w, h, r) {
       s += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
     }
   }
-  return out;
 }
 
 // 回傳一組低解析度的係數場，供全解析度取樣使用
-function guidedFields(d, w, h, strength) {
-  const lw = Math.min(w, 720);
+function guidedFields(d, w, h, strength, maxField) {
+  const lw = Math.min(w, maxField || 720);
   const scale = lw / w;
   const lh = Math.max(1, Math.round(h * scale));
   const n = lw * lh;
 
-  const Y = new Float32Array(n), R = new Float32Array(n),
-        G = new Float32Array(n), B = new Float32Array(n), YY = new Float32Array(n);
+  const [Y, R, G, B, YY, tmp, mY, mYY, mR, mG, mB, A, bR, bG, bB] = pool(n, 15);
   let skinSum = 0, skinN = 0;
 
   for (let y = 0; y < lh; y++) {
@@ -689,10 +697,12 @@ function guidedFields(d, w, h, strength) {
   const rad = Math.max(2, Math.round((lw / 110) * (0.45 + strength * 0.85)));
   const eps = 70 + strength * 780;   // 越大壓得越平
 
-  const mY = boxF(Y, lw, lh, rad), mYY = boxF(YY, lw, lh, rad);
-  const mR = boxF(R, lw, lh, rad), mG = boxF(G, lw, lh, rad), mB = boxF(B, lw, lh, rad);
+  boxF(Y, mY, tmp, lw, lh, rad);
+  boxF(YY, mYY, tmp, lw, lh, rad);
+  boxF(R, mR, tmp, lw, lh, rad);
+  boxF(G, mG, tmp, lw, lh, rad);
+  boxF(B, mB, tmp, lw, lh, rad);
 
-  const A = new Float32Array(n);
   for (let p = 0; p < n; p++) {
     const v = Math.max(0, mYY[p] - mY[p] * mY[p]);
     A[p] = v / (v + eps);
@@ -703,7 +713,9 @@ function guidedFields(d, w, h, strength) {
   // 半徑必須明顯大於要修的暗塊，否則基準會跟著陰影一起沉下去，
   // 偏差就量不出來。黑眼圈、法令紋大約是臉寬的 1/5，取 1/7 邊長。
   const brad = Math.max(24, Math.round(Math.min(lw, lh) / 7));
-  const bR = boxF(R, lw, lh, brad), bG = boxF(G, lw, lh, brad), bB = boxF(B, lw, lh, brad);
+  boxF(R, bR, tmp, lw, lh, brad);
+  boxF(G, bG, tmp, lw, lh, brad);
+  boxF(B, bB, tmp, lw, lh, brad);
 
   // 膚色不足時回傳 0，呼叫端就會跳過自動曝光，避免對著非人臉亂調
   const skinY = skinN > n * 0.03 ? skinSum / skinN : 0;
@@ -802,7 +814,7 @@ function warpFace(img, F) {
 }
 
 // 就地套用整條管線
-function process(imgData, p) {
+function process(imgData, p, live) {
   const d = imgData.data, w = imgData.width, h = imgData.height;
   const n = d.length;
 
@@ -823,9 +835,9 @@ function process(imgData, p) {
   // 保邊平滑的係數場（低解析度算，全解析度取樣）
   let GF = null, smallBlur = null;
   if (smooth > 0 || even > 0 || shine > 0 || glow > 0 || rosy > 0) {
-    GF = guidedFields(d, w, h, smooth);
+    GF = guidedFields(d, w, h, smooth, live ? 400 : 720);
   }
-  if (sharpen > 0) {
+  if (sharpen > 0 && !live) {
     smallBlur = boxBlur(d, w, h, Math.max(1, Math.round(Math.min(w, h) / 600)));
   }
 
@@ -1426,19 +1438,18 @@ $("#btnCloseDone").addEventListener("click", () => {
 const liveBar = $("#liveBar");
 const camMsg = $("#camMsg");
 
-function liveFilter() {
-  const b = 1 + (P.bright / 100) * 0.35 + (P.glow / 100) * 0.22;
-  const c = 1 + (P.contrast / 100) * 0.4;
-  const s = 1 + (P.sat / 100) * 0.6;
-  const sep = P.warm > 0 ? (P.warm / 100) * 0.35 : 0;
-  return `brightness(${b}) contrast(${c}) saturate(${s}) sepia(${sep})`;
-}
-
 /* 即時預覽的膚色遮罩。
    之前的做法是把整個畫面糊掉——背景、眼鏡、頭髮全糊，那不是美顏。
    這裡先算出「哪些像素是皮膚」，只讓那些地方套上模糊。
    遮罩用低解析度計算，每 5 幀更新一次，放大時瀏覽器自動平滑邊界。 */
-const LIVE = { blur: null, mask: null, small: null, frame: 0 };
+/* 即時預覽用的是照片管線的快速近似版。
+   實測完整管線在 480x640 就要 70ms 一幀（14 fps），純 JS 逐像素
+   做不到即時，所以這裡改用 GPU 合成：
+     朝模糊層混合  → 同時壓平紋理、拉亮暗處、壓下油光（勻膚＋去油光）
+     膚色遮罩裁切  → 背景、頭髮、眼鏡完全不動
+     整體亮度增益  → 自動打亮臉部
+   按下快門後的照片仍然走完整管線。 */
+const LIVE = { blur: null, mask: null, small: null, frame: 0, skinY: 0, srcW: -1, srcH: -1 };
 
 function ensureLiveBuffers(w, h) {
   if (!LIVE.blur) {
@@ -1448,7 +1459,6 @@ function ensureLiveBuffers(w, h) {
   }
   if (LIVE.srcW !== w || LIVE.srcH !== h) {
     LIVE.srcW = w; LIVE.srcH = h;
-    // 模糊層用半解析度：糊掉的東西放大回去看不出差別，成本卻少四分之三
     const bw = Math.max(320, Math.round(w / 2));
     LIVE.blur.width = bw;
     LIVE.blur.height = Math.max(1, Math.round(h * bw / w));
@@ -1458,22 +1468,38 @@ function ensureLiveBuffers(w, h) {
   }
 }
 
+// 順便算出膚色平均亮度，供自動打亮臉部使用
 function updateSkinMask(v) {
   const mw = LIVE.mask.width, mh = LIVE.mask.height;
   const sctx = LIVE.small.getContext("2d", { willReadFrequently: true });
   sctx.drawImage(v, 0, 0, mw, mh);
   const img = sctx.getImageData(0, 0, mw, mh);
   const d = img.data;
+  let sum = 0, cnt = 0;
   for (let i = 0; i < d.length; i += 4) {
     const r = d[i], g = d[i + 1], b = d[i + 2], rb = r - b;
     let skin = 0;
     if (r > 55 && r >= g && g >= b) {
       skin = clamp01((rb - 6) / 16) * clamp01((130 - rb) / 50);
     }
+    if (skin > 0.5) { sum += (r * 299 + g * 587 + b * 114) / 1000; cnt++; }
     d[i] = 255; d[i + 1] = 255; d[i + 2] = 255;
     d[i + 3] = skin * 255;
   }
   LIVE.mask.getContext("2d").putImageData(img, 0, 0);
+  LIVE.skinY = cnt > (mw * mh) * 0.03 ? sum / cnt : 0;
+}
+
+function liveFilter() {
+  let bf = 1 + (P.bright / 100) * 0.35;
+  if (P.autoexp > 0 && LIVE.skinY > 0) {
+    const raw = 186 / LIVE.skinY;
+    bf *= 1 + (Math.min(1.55, Math.max(0.88, raw)) - 1) * (P.autoexp / 100);
+  }
+  const c = 1 + (P.contrast / 100) * 0.4;
+  const s = 1 + (P.sat / 100) * 0.6;
+  const sep = P.warm > 0 ? (P.warm / 100) * 0.35 : 0;
+  return `brightness(${bf.toFixed(3)}) contrast(${c}) saturate(${s}) sepia(${sep})`;
 }
 
 function liveFrame() {
@@ -1488,10 +1514,14 @@ function liveFrame() {
       const avg = CAM.acc / CAM.n;
       CAM.acc = 0; CAM.n = 0;
       // 錄影中不改尺寸，中途換解析度會弄壞這一段影片
-      if (avg > 45 && CAM.cap > 720 && !REC.on) CAM.cap = CAM.cap === 1280 ? 960 : 720;
+      if (avg > 45 && !REC.on) {
+        const ladder = [1280, 960, 720, 600];
+        const i = ladder.indexOf(CAM.cap);
+        if (i >= 0 && i < ladder.length - 1) CAM.cap = ladder[i + 1];
+      }
     }
 
-    // 預覽畫布壓到長邊 CAM.cap：錄影是錄這張畫布，全解析度會掉幀。
+    // 預覽畫布壓到長邊 CAM.cap：錄影錄的是這張畫布。
     // 拍照的快門是直接從 video 取全解析度，不受這裡影響。
     const k = Math.min(1, CAM.cap / Math.max(v.videoWidth, v.videoHeight));
     const cw = Math.round(v.videoWidth * k), ch = Math.round(v.videoHeight * k);
@@ -1503,14 +1533,13 @@ function liveFrame() {
     const w = view.width, h = view.height;
     ensureLiveBuffers(w, h);
 
-    const needMask = P.smooth > 0 || P.glow > 0;
-    if (needMask && LIVE.frame % 5 === 0) updateSkinMask(v);
+    const skinWork = P.smooth > 0 || P.even > 0 || P.shine > 0 || P.glow > 0;
+    if ((skinWork || P.autoexp > 0) && LIVE.frame % 5 === 0) updateSkinMask(v);
     LIVE.frame++;
 
-    // 前鏡頭鏡像，看起來才跟照鏡子一樣
-    const mirror = CAM.facing === "user";
+    const mirror = CAM.facing === "user";   // 前鏡頭鏡像，才像照鏡子
 
-    // 1. 清晰的底層
+    // 1. 清晰底層，含自動打亮臉部與整體色調
     vctx.save();
     if (mirror) vctx.setTransform(-1, 0, 0, 1, w, 0);
     vctx.filter = liveFilter();
@@ -1518,7 +1547,7 @@ function liveFrame() {
     vctx.restore();
     vctx.filter = "none";
 
-    if (needMask) {
+    if (skinWork) {
       const bw = LIVE.blur.width, bh = LIVE.blur.height;
       const bctx = LIVE.blur.getContext("2d");
       bctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1526,9 +1555,7 @@ function liveFrame() {
       bctx.globalAlpha = 1;
       bctx.clearRect(0, 0, bw, bh);
 
-      // 2. 膚質層（未鏡像，與遮罩同一個座標系）
-      //    亮膚用提高亮度、而不是蓋一層白 —— 蓋白會讓臉發灰發死，
-      //    要的是透亮感，不是刷白。
+      // 2. 膚質層：模糊 + 提亮。亮膚用亮度而非蓋白，臉才不會發灰。
       const r = P.smooth > 0 ? Math.max(1, (bw / 170) * (P.smooth / 100)) : 0;
       const gb = 1 + (P.glow / 100) * 0.20;
       bctx.filter = (r ? `blur(${r.toFixed(1)}px) ` : "") +
@@ -1536,15 +1563,18 @@ function liveFrame() {
       bctx.drawImage(v, 0, 0, bw, bh);
       bctx.filter = "none";
 
-      // 3. 只留下膚色區域 —— 背景、眼鏡、頭髮完全不受影響
+      // 3. 只保留膚色區域
       bctx.globalCompositeOperation = "destination-in";
       bctx.drawImage(LIVE.mask, 0, 0, bw, bh);
       bctx.globalCompositeOperation = "source-over";
 
-      // 4. 疊回主畫面（這時才鏡像）
+      // 4. 疊回主畫面。朝模糊層混合會同時把暗處拉亮、把油光壓下來，
+      //    所以勻膚與去油光的強度一起決定這裡的不透明度。
+      const evenness = Math.max(P.even, P.shine) / 100;
+      const alpha = Math.min(0.92, Math.max(P.smooth / 100, evenness * 0.75, P.glow / 100));
       vctx.save();
       if (mirror) vctx.setTransform(-1, 0, 0, 1, w, 0);
-      vctx.globalAlpha = Math.min(0.95, Math.max(P.smooth, P.glow) / 100);
+      vctx.globalAlpha = alpha;
       vctx.drawImage(LIVE.blur, 0, 0, w, h);
       vctx.restore();
       vctx.globalAlpha = 1;
