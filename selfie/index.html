@@ -338,7 +338,7 @@
 
 <div id="app">
   <header id="bar">
-    <div class="brand"><b>光室</b><i>Darkroom</i><i id="ver">v8</i></div>
+    <div class="brand"><b>光室</b><i>Darkroom</i><i id="ver">v9</i></div>
     <div class="bar-acts">
       <button id="btnReset" class="ghost" disabled>重設</button>
       <button id="btnExport" class="primary" disabled>儲存照片</button>
@@ -400,6 +400,8 @@
       </div>
       <div class="ctl"><div class="ctl-top"><label for="s_smooth">磨皮</label><output id="o_smooth">0</output></div>
         <input type="range" id="s_smooth" data-k="smooth" min="0" max="100" value="0"></div>
+      <div class="ctl"><div class="ctl-top"><label for="s_autoexp">自動打亮臉部</label><output id="o_autoexp">0</output></div>
+        <input type="range" id="s_autoexp" data-k="autoexp" min="0" max="100" value="0"></div>
       <div class="ctl"><div class="ctl-top"><label for="s_even">勻膚</label><output id="o_even">0</output></div>
         <input type="range" id="s_even" data-k="even" min="0" max="100" value="0"></div>
       <div class="ctl"><div class="ctl-top"><label for="s_glow">亮膚</label><output id="o_glow">0</output></div>
@@ -503,12 +505,12 @@ const TONE_ZERO = {
 // 調校方向：皮膚平滑但保留臉部結構，提亮走「透亮」而非「刷白」，
 // 紅潤收斂 —— 過紅會讓膚色顯得不自然。
 const BEAUTY = {
-  off:    { smooth: 0,  even: 0,  glow: 0,  rosy: 0,  sharpen: 0 },
-  soft:   { smooth: 42, even: 35, glow: 18, rosy: 6,  sharpen: 12 },
-  normal: { smooth: 68, even: 58, glow: 30, rosy: 10, sharpen: 16 },
-  strong: { smooth: 88, even: 78, glow: 45, rosy: 16, sharpen: 20 }
+  off:    { smooth: 0,  even: 0,  glow: 0,  rosy: 0,  sharpen: 0,  autoexp: 0 },
+  soft:   { smooth: 42, even: 35, glow: 18, rosy: 6,  sharpen: 12, autoexp: 55 },
+  normal: { smooth: 68, even: 58, glow: 30, rosy: 10, sharpen: 16, autoexp: 75 },
+  strong: { smooth: 88, even: 78, glow: 45, rosy: 16, sharpen: 20, autoexp: 90 }
 };
-const SKIN_KEYS = ["smooth", "even", "glow", "rosy", "sharpen"];
+const SKIN_KEYS = ["smooth", "even", "glow", "rosy", "sharpen", "autoexp"];
 
 // 一打開就是美顏狀態——這才是自拍 App 該有的預設
 const DEFAULTS = Object.assign({}, TONE_ZERO, BEAUTY.normal, {
@@ -662,6 +664,7 @@ function guidedFields(d, w, h, strength) {
 
   const Y = new Float32Array(n), R = new Float32Array(n),
         G = new Float32Array(n), B = new Float32Array(n), YY = new Float32Array(n);
+  let skinSum = 0, skinN = 0;
 
   for (let y = 0; y < lh; y++) {
     const sy = Math.min(h - 1, Math.round(y / scale));
@@ -672,6 +675,12 @@ function guidedFields(d, w, h, strength) {
       R[p] = r; G[p] = g; B[p] = b;
       const yy = (r * 299 + g * 587 + b * 114) / 1000;
       Y[p] = yy; YY[p] = yy * yy;
+
+      // 順手統計膚色區的平均亮度，用來自動校正臉部曝光
+      const rb = r - b;
+      if (r > 45 && r >= g && g >= b && rb > 6 && rb < 125) {
+        skinSum += yy; skinN++;
+      }
     }
   }
 
@@ -694,7 +703,10 @@ function guidedFields(d, w, h, strength) {
   const brad = Math.max(24, Math.round(Math.min(lw, lh) / 7));
   const bR = boxF(R, lw, lh, brad), bG = boxF(G, lw, lh, brad), bB = boxF(B, lw, lh, brad);
 
-  return { lw, lh, scale, A, mR, mG, mB, bR, bG, bB };
+  // 膚色不足時回傳 0，呼叫端就會跳過自動曝光，避免對著非人臉亂調
+  const skinY = skinN > n * 0.03 ? skinSum / skinN : 0;
+
+  return { lw, lh, scale, A, mR, mG, mB, bR, bG, bB, skinY };
 }
 
 // 雙線性取樣低解析度係數場
@@ -814,9 +826,20 @@ function process(imgData, p) {
     smallBlur = boxBlur(d, w, h, Math.max(1, Math.round(Math.min(w, h) / 600)));
   }
 
+  // 自動臉部曝光：把膚色平均亮度拉向目標值。
+  // 美顏相機的臉之所以好看，有一大半是臉被打亮了，不是磨皮。
+  let autoGain = 1;
+  const autoExp = (p.autoexp || 0) / 100;
+  if (autoExp > 0 && GF && GF.skinY > 0) {
+    const target = 186;
+    const raw = target / GF.skinY;
+    // 只做溫和修正，且不過度壓暗已經夠亮的臉
+    autoGain = 1 + (Math.min(1.55, Math.max(0.88, raw)) - 1) * autoExp;
+  }
+
   // 對比查表
   const cf = contrast >= 0 ? 1 + contrast * 1.1 : 1 + contrast * 0.9;
-  const bf = 1 + bright * 0.9;
+  const bf = (1 + bright * 0.9) * autoGain;
   const lut = new Uint8ClampedArray(256);
   for (let i = 0; i < 256; i++) {
     let v = i * bf;
