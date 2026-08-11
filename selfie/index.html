@@ -78,6 +78,11 @@
     font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
     color: var(--safelight);
   }
+  /* 版本標記：用來確認手機上跑的是不是最新版 */
+  .brand #ver {
+    color: var(--muted); letter-spacing: 0.1em;
+    border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px;
+  }
   .bar-acts { display: flex; gap: 8px; }
 
   /* ---------- 按鈕 ---------- */
@@ -333,7 +338,7 @@
 
 <div id="app">
   <header id="bar">
-    <div class="brand"><b>光室</b><i>Darkroom</i></div>
+    <div class="brand"><b>光室</b><i>Darkroom</i><i id="ver">v5</i></div>
     <div class="bar-acts">
       <button id="btnReset" class="ghost" disabled>重設</button>
       <button id="btnExport" class="primary" disabled>儲存照片</button>
@@ -514,7 +519,10 @@ let FACE = Object.assign({}, FACE_DEFAULTS);
 let currentTab = "skin";
 
 // 前鏡頭即時預覽
-const CAM = { on: false, stream: null, video: null, raf: 0, facing: "user" };
+const CAM = {
+  on: false, stream: null, video: null, raf: 0, facing: "user",
+  cap: 1280, lastT: 0, acc: 0, n: 0   // cap 會依實測幀率自動下修
+};
 
 let P = Object.assign({}, DEFAULTS);
 let srcImg = null;         // 原圖 (Image)
@@ -1285,33 +1293,125 @@ function liveFilter() {
   return `brightness(${b}) contrast(${c}) saturate(${s}) sepia(${sep})`;
 }
 
+/* 即時預覽的膚色遮罩。
+   之前的做法是把整個畫面糊掉——背景、眼鏡、頭髮全糊，那不是美顏。
+   這裡先算出「哪些像素是皮膚」，只讓那些地方套上模糊。
+   遮罩用低解析度計算，每 5 幀更新一次，放大時瀏覽器自動平滑邊界。 */
+const LIVE = { blur: null, mask: null, small: null, frame: 0 };
+
+function ensureLiveBuffers(w, h) {
+  if (!LIVE.blur) {
+    LIVE.blur = document.createElement("canvas");
+    LIVE.mask = document.createElement("canvas");
+    LIVE.small = document.createElement("canvas");
+  }
+  if (LIVE.srcW !== w || LIVE.srcH !== h) {
+    LIVE.srcW = w; LIVE.srcH = h;
+    // 模糊層用半解析度：糊掉的東西放大回去看不出差別，成本卻少四分之三
+    const bw = Math.max(320, Math.round(w / 2));
+    LIVE.blur.width = bw;
+    LIVE.blur.height = Math.max(1, Math.round(h * bw / w));
+    const mw = 160, mh = Math.max(1, Math.round(h * mw / w));
+    LIVE.mask.width = mw; LIVE.mask.height = mh;
+    LIVE.small.width = mw; LIVE.small.height = mh;
+  }
+}
+
+function updateSkinMask(v) {
+  const mw = LIVE.mask.width, mh = LIVE.mask.height;
+  const sctx = LIVE.small.getContext("2d", { willReadFrequently: true });
+  sctx.drawImage(v, 0, 0, mw, mh);
+  const img = sctx.getImageData(0, 0, mw, mh);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i + 1], b = d[i + 2], rb = r - b;
+    let skin = 0;
+    if (r > 55 && r >= g && g >= b) {
+      skin = clamp01((rb - 6) / 16) * clamp01((130 - rb) / 50);
+    }
+    d[i] = 255; d[i + 1] = 255; d[i + 2] = 255;
+    d[i + 3] = skin * 255;
+  }
+  LIVE.mask.getContext("2d").putImageData(img, 0, 0);
+}
+
 function liveFrame() {
   if (!CAM.on) return;
   const v = CAM.video;
   if (v.videoWidth) {
-    // 預覽畫布壓到長邊 1280：錄影是錄這張畫布，全解析度會掉幀。
+    // 跟不上就自動降解析度，寧可畫面小一點也不要卡頓
+    const now = performance.now();
+    if (CAM.lastT) { CAM.acc += now - CAM.lastT; CAM.n++; }
+    CAM.lastT = now;
+    if (CAM.n >= 45) {
+      const avg = CAM.acc / CAM.n;
+      CAM.acc = 0; CAM.n = 0;
+      // 錄影中不改尺寸，中途換解析度會弄壞這一段影片
+      if (avg > 45 && CAM.cap > 720 && !REC.on) CAM.cap = CAM.cap === 1280 ? 960 : 720;
+    }
+
+    // 預覽畫布壓到長邊 CAM.cap：錄影是錄這張畫布，全解析度會掉幀。
     // 拍照的快門是直接從 video 取全解析度，不受這裡影響。
-    const k = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight));
+    const k = Math.min(1, CAM.cap / Math.max(v.videoWidth, v.videoHeight));
     const cw = Math.round(v.videoWidth * k), ch = Math.round(v.videoHeight * k);
     if (view.width !== cw || view.height !== ch) {
       view.width = cw;
       view.height = ch;
       fitView();
     }
-    vctx.save();
+    const w = view.width, h = view.height;
+    ensureLiveBuffers(w, h);
+
+    const needMask = P.smooth > 0 || P.glow > 0;
+    if (needMask && LIVE.frame % 5 === 0) updateSkinMask(v);
+    LIVE.frame++;
+
     // 前鏡頭鏡像，看起來才跟照鏡子一樣
-    if (CAM.facing === "user") vctx.setTransform(-1, 0, 0, 1, view.width, 0);
+    const mirror = CAM.facing === "user";
+
+    // 1. 清晰的底層
+    vctx.save();
+    if (mirror) vctx.setTransform(-1, 0, 0, 1, w, 0);
     vctx.filter = liveFilter();
-    vctx.drawImage(v, 0, 0, view.width, view.height);
-    if (P.smooth > 0) {
-      const r = Math.max(1, (view.width / 160) * (P.smooth / 100));
-      vctx.filter = `blur(${r.toFixed(1)}px) ` + liveFilter();
-      vctx.globalAlpha = Math.min(0.85, (P.smooth / 100) * 0.95);
-      vctx.drawImage(v, 0, 0, view.width, view.height);
-      vctx.globalAlpha = 1;
-    }
+    vctx.drawImage(v, 0, 0, w, h);
     vctx.restore();
     vctx.filter = "none";
+
+    if (needMask) {
+      const bw = LIVE.blur.width, bh = LIVE.blur.height;
+      const bctx = LIVE.blur.getContext("2d");
+      bctx.setTransform(1, 0, 0, 1, 0, 0);
+      bctx.globalCompositeOperation = "source-over";
+      bctx.globalAlpha = 1;
+      bctx.clearRect(0, 0, bw, bh);
+
+      // 2. 模糊層（未鏡像，與遮罩同一個座標系）
+      if (P.smooth > 0) {
+        const r = Math.max(1, (bw / 170) * (P.smooth / 100));
+        bctx.filter = `blur(${r.toFixed(1)}px) ` + liveFilter();
+        bctx.drawImage(v, 0, 0, bw, bh);
+        bctx.filter = "none";
+      }
+      // 3. 亮膚：在膚色上加一層白
+      if (P.glow > 0) {
+        bctx.globalAlpha = (P.glow / 100) * 0.30;
+        bctx.fillStyle = "#fff";
+        bctx.fillRect(0, 0, bw, bh);
+        bctx.globalAlpha = 1;
+      }
+      // 4. 只留下膚色區域 —— 背景、眼鏡、頭髮完全不受影響
+      bctx.globalCompositeOperation = "destination-in";
+      bctx.drawImage(LIVE.mask, 0, 0, bw, bh);
+      bctx.globalCompositeOperation = "source-over";
+
+      // 5. 疊回主畫面（這時才鏡像）
+      vctx.save();
+      if (mirror) vctx.setTransform(-1, 0, 0, 1, w, 0);
+      vctx.globalAlpha = Math.min(0.95, Math.max(P.smooth, P.glow) / 100);
+      vctx.drawImage(LIVE.blur, 0, 0, w, h);
+      vctx.restore();
+      vctx.globalAlpha = 1;
+    }
   }
   CAM.raf = requestAnimationFrame(liveFrame);
 }
@@ -1341,6 +1441,7 @@ async function startLive() {
   await CAM.video.play();
 
   CAM.on = true;
+  CAM.cap = 1280; CAM.lastT = 0; CAM.acc = 0; CAM.n = 0;
   empty.hidden = true;
   view.hidden = false;
   hold.hidden = true;

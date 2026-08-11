@@ -1,5 +1,5 @@
 /* 光室 — 離線快取 */
-const CACHE = "guangshi-vmso4dri6";
+const CACHE = "guangshi-vmso4x4nm";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest",
   "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
@@ -15,19 +15,36 @@ self.addEventListener("activate", (e) => {
   );
 });
 
-// 先給快取（開得快、離線可用），背景再更新
+// 網頁本身走「網路優先」：有網路時一定拿到最新版，離線才回退快取。
+// 之前用快取優先，導致更新後使用者永遠慢一個版本。
 self.addEventListener("fetch", (e) => {
-  if (e.request.method !== "GET") return;
-  e.respondWith(
-    caches.match(e.request).then((hit) => {
-      const net = fetch(e.request).then((res) => {
-        if (res && res.status === 200 && res.type === "basic") {
+  const req = e.request;
+  if (req.method !== "GET") return;
+
+  const isDoc = req.mode === "navigate" ||
+    (req.headers.get("accept") || "").includes("text/html");
+
+  if (isDoc) {
+    e.respondWith(
+      fetch(req)
+        .then((res) => {
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(e.request, copy));
-        }
-        return res;
-      }).catch(() => hit);
-      return hit || net;
-    })
+          caches.open(CACHE).then((c) => c.put(req, copy));
+          return res;
+        })
+        .catch(() => caches.match(req).then((hit) => hit || caches.match("./index.html")))
+    );
+    return;
+  }
+
+  // 圖示等靜態資源沿用快取優先
+  e.respondWith(
+    caches.match(req).then((hit) => hit || fetch(req).then((res) => {
+      if (res && res.status === 200 && res.type === "basic") {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(req, copy));
+      }
+      return res;
+    }))
   );
 });
