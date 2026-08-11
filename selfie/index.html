@@ -151,15 +151,40 @@
   /* ---------- 自拍模式 ---------- */
   #liveBar {
     position: absolute; left: 0; right: 0; bottom: 0;
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 12px; padding: 14px 18px;
+    display: grid; gap: 12px; padding: 14px 18px;
     background: linear-gradient(to top, rgba(12,13,16,0.92), rgba(12,13,16,0));
+  }
+  .mode-row { display: flex; align-items: center; justify-content: center; gap: 12px; position: relative; }
+  .modes {
+    display: flex; gap: 0; border: 1px solid rgba(255,255,255,0.28);
+    border-radius: 999px; overflow: hidden;
+  }
+  .modes button {
+    border: 0; border-radius: 0; background: transparent; color: #fff;
+    padding: 6px 18px; font-size: 13px;
+  }
+  .modes button[aria-pressed="true"] { background: var(--safelight); color: #241202; font-weight: 700; }
+  #recTime {
+    position: absolute; right: 0;
+    font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums;
+    color: #fff; display: flex; align-items: center; gap: 6px;
+  }
+  #recTime::before {
+    content: ""; width: 9px; height: 9px; border-radius: 50%; background: #e5484d;
+    animation: blink 1s steps(2, start) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0.25; } }
+
+  .live-controls {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
   }
   #shutter {
     width: 62px; height: 62px; border-radius: 50%; padding: 0;
     background: var(--safelight); border: 4px solid rgba(255,255,255,0.85);
     box-shadow: 0 0 0 2px rgba(0,0,0,0.4);
   }
+  #shutter.video { background: #e5484d; }
+  #shutter.recording { background: #e5484d; border-radius: 16px; width: 46px; height: 46px; }
   #liveBar .side { min-width: 74px; }
   #liveBar .side:last-child { text-align: right; }
 
@@ -278,10 +303,11 @@
   #done .head strong { font-size: 15px; }
   /* 巢狀 grid 裡的百分比高度沒有明確參考框，改用絕對定位把照片框死在這一格 */
   #doneWrap { position: relative; overflow: hidden; min-height: 0; }
-  #doneImg {
+  #doneImg, #doneVid {
     position: absolute; inset: 0;
     width: 100%; height: 100%; object-fit: contain;
     border-radius: 6px; display: block;
+    background: #000;
   }
   #done .foot { display: grid; gap: 8px; justify-items: center; }
   #done .foot p { margin: 0; font-size: 13px; color: var(--muted); text-align: center; }
@@ -328,9 +354,18 @@
     <div id="hold" hidden>按住畫面看原圖</div>
     <div id="busy" hidden>處理中</div>
     <div id="liveBar" hidden>
-      <span class="side"><button id="btnCancelLive" class="ghost">取消</button></span>
-      <button id="shutter" aria-label="拍攝"></button>
-      <span class="side"><button id="btnFlipCam" class="ghost">翻轉</button></span>
+      <div class="mode-row">
+        <div class="modes" id="modeRow">
+          <button data-mode="photo" aria-pressed="true">照片</button>
+          <button data-mode="video">錄影</button>
+        </div>
+        <span id="recTime" hidden>0:00</span>
+      </div>
+      <div class="live-controls">
+        <span class="side"><button id="btnCancelLive" class="ghost">取消</button></span>
+        <button id="shutter" aria-label="拍攝"></button>
+        <span class="side"><button id="btnFlipCam" class="ghost">翻轉</button></span>
+      </div>
     </div>
     <div id="camMsg" hidden></div>
   </main>
@@ -432,10 +467,13 @@
     <strong>完成</strong>
     <button id="btnCloseDone" class="ghost">關閉</button>
   </div>
-  <div id="doneWrap"><img id="doneImg" alt="編修完成的照片"></div>
+  <div id="doneWrap">
+    <img id="doneImg" alt="編修完成的照片">
+    <video id="doneVid" controls playsinline hidden></video>
+  </div>
   <div class="foot">
     <button id="btnDownload" class="primary">下載到裝置</button>
-    <p>手機上也可以直接長按上方照片，選「加入照片」存到相簿。</p>
+    <p id="doneHint">手機上也可以直接長按上方照片，選「加入照片」存到相簿。</p>
   </div>
 </div>
 
@@ -1203,6 +1241,11 @@ btnExport.addEventListener("click", () => {
       g.canvas.toBlob((blob) => {
         const url = URL.createObjectURL(blob);
         const img = $("#doneImg");
+        // 從錄影結果切回照片檢視
+        $("#doneVid").hidden = true;
+        $("#doneVid").removeAttribute("src");
+        img.hidden = false;
+        $("#doneHint").textContent = "手機上也可以直接長按上方照片，選「加入照片」存到相簿。";
         img.src = url;
         $("#btnDownload").onclick = () => {
           const a = document.createElement("a");
@@ -1220,7 +1263,11 @@ btnExport.addEventListener("click", () => {
   }, 30);
 });
 
-$("#btnCloseDone").addEventListener("click", () => { $("#done").hidden = true; });
+$("#btnCloseDone").addEventListener("click", () => {
+  const v = $("#doneVid");
+  if (!v.hidden) v.pause();
+  $("#done").hidden = true;
+});
 
 /* ===========================================================
    前鏡頭自拍
@@ -1242,9 +1289,13 @@ function liveFrame() {
   if (!CAM.on) return;
   const v = CAM.video;
   if (v.videoWidth) {
-    if (view.width !== v.videoWidth || view.height !== v.videoHeight) {
-      view.width = v.videoWidth;
-      view.height = v.videoHeight;
+    // 預覽畫布壓到長邊 1280：錄影是錄這張畫布，全解析度會掉幀。
+    // 拍照的快門是直接從 video 取全解析度，不受這裡影響。
+    const k = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight));
+    const cw = Math.round(v.videoWidth * k), ch = Math.round(v.videoHeight * k);
+    if (view.width !== cw || view.height !== ch) {
+      view.width = cw;
+      view.height = ch;
       fitView();
     }
     vctx.save();
@@ -1308,6 +1359,7 @@ function camFail(reason) {
 }
 
 function stopLive() {
+  stopRec();
   CAM.on = false;
   cancelAnimationFrame(CAM.raf);
   if (CAM.stream) {
@@ -1352,8 +1404,140 @@ $("#btnAutoFace").addEventListener("click", () => {
   else meta.textContent = "抓不到臉，請手動拖曳橢圓";
 });
 
-$("#shutter").addEventListener("click", shutter);
-$("#btnCancelLive").addEventListener("click", stopLive);
+/* -----------------------------------------------------------
+   錄影：直接錄「已經套好美顏」的那張 canvas，
+   所以錄下來的畫面就是你在預覽看到的樣子。
+   ----------------------------------------------------------- */
+const REC = { mr: null, chunks: [], timer: 0, t0: 0, audio: null, on: false };
+let camMode = "photo";
+
+const MIMES = [
+  "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+  "video/mp4",
+  "video/webm;codecs=vp9,opus",
+  "video/webm;codecs=vp8,opus",
+  "video/webm"
+];
+function pickMime() {
+  if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
+  for (const m of MIMES) if (MediaRecorder.isTypeSupported(m)) return m;
+  return "";
+}
+
+function setMode(mode) {
+  if (REC.on) return;
+  camMode = mode;
+  document.querySelectorAll("#modeRow button").forEach((b) => {
+    b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
+  });
+  $("#shutter").classList.toggle("video", mode === "video");
+  $("#shutter").setAttribute("aria-label", mode === "video" ? "開始錄影" : "拍攝");
+}
+
+function fmtTime(ms) {
+  const s = Math.floor(ms / 1000);
+  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
+
+async function startRec() {
+  if (!window.MediaRecorder || !view.captureStream) {
+    return camFail("這個瀏覽器不支援錄影。");
+  }
+  let stream;
+  try {
+    stream = view.captureStream(30);
+  } catch (err) {
+    return camFail("無法擷取畫面（" + (err.name || "未知錯誤") + "）。");
+  }
+
+  // 收音：拒絕就錄無聲，不中斷錄影
+  REC.audio = null;
+  try {
+    const a = await navigator.mediaDevices.getUserMedia({ audio: true });
+    REC.audio = a.getAudioTracks()[0];
+    if (REC.audio) stream.addTrack(REC.audio);
+  } catch (err) { /* 沒有麥克風權限，繼續錄無聲影片 */ }
+
+  const mime = pickMime();
+  REC.chunks = [];
+  try {
+    REC.mr = new MediaRecorder(stream, mime
+      ? { mimeType: mime, videoBitsPerSecond: 6000000 }
+      : undefined);
+  } catch (err) {
+    stopAudio();
+    return camFail("錄影啟動失敗（" + (err.name || "未知錯誤") + "）。");
+  }
+
+  REC.mr.ondataavailable = (e) => { if (e.data && e.data.size) REC.chunks.push(e.data); };
+  REC.mr.onstop = finishRec;
+  REC.mr.start(250);
+
+  REC.on = true;
+  REC.t0 = Date.now();
+  $("#shutter").classList.add("recording");
+  $("#recTime").hidden = false;
+  $("#recTime").textContent = "0:00";
+  $("#btnFlipCam").disabled = true;
+  REC.timer = setInterval(() => {
+    $("#recTime").textContent = fmtTime(Date.now() - REC.t0);
+  }, 250);
+}
+
+function stopAudio() {
+  if (REC.audio) { REC.audio.stop(); REC.audio = null; }
+}
+
+function stopRec() {
+  if (!REC.on) return;
+  REC.on = false;
+  clearInterval(REC.timer);
+  $("#shutter").classList.remove("recording");
+  $("#recTime").hidden = true;
+  $("#btnFlipCam").disabled = false;
+  try { REC.mr.stop(); } catch (err) { /* 已經停了 */ }
+}
+
+function finishRec() {
+  stopAudio();
+  if (!REC.chunks.length) {
+    meta.textContent = "沒有錄到內容";
+    return;
+  }
+  const type = REC.mr && REC.mr.mimeType ? REC.mr.mimeType : "video/mp4";
+  const blob = new Blob(REC.chunks, { type });
+  REC.chunks = [];
+  const url = URL.createObjectURL(blob);
+  const ext = type.indexOf("mp4") >= 0 ? "mp4" : "webm";
+
+  $("#doneImg").hidden = true;
+  const vid = $("#doneVid");
+  vid.hidden = false;
+  vid.src = url;
+  $("#doneHint").textContent = ext === "mp4"
+    ? "手機上可以長按影片選「儲存影片」，或按下面的按鈕下載。"
+    : "這支瀏覽器錄成 WebM 格式。下載後若相簿不吃，可用轉檔工具轉成 MP4。";
+  $("#btnDownload").onclick = () => {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "光室-" + Date.now() + "." + ext;
+    a.click();
+  };
+  $("#done").hidden = false;
+}
+
+document.querySelector("#modeRow").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-mode]");
+  if (b) setMode(b.dataset.mode);
+});
+
+$("#shutter").addEventListener("click", () => {
+  if (camMode === "photo") shutter();
+  else if (REC.on) stopRec();
+  else startRec();
+});
+
+$("#btnCancelLive").addEventListener("click", () => { stopRec(); stopLive(); });
 $("#btnFlipCam").addEventListener("click", async () => {
   CAM.facing = CAM.facing === "user" ? "environment" : "user";
   stopLive();
