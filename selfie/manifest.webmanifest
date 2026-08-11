@@ -1,0 +1,32 @@
+{
+  "name": "光室 Darkroom 自拍美顏",
+  "short_name": "光室",
+  "description": "自拍美顏相機：磨皮、亮膚、瘦臉大眼、濾鏡。照片不上傳。",
+  "lang": "zh-TW",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#131519",
+  "theme_color": "#131519",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

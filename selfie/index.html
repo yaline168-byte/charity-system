@@ -1,0 +1,1326 @@
+<!doctype html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#131519">
+<meta name="description" content="自拍美顏相機：磨皮、亮膚、瘦臉大眼、濾鏡。照片留在你自己的裝置上，不會上傳。">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="光室">
+<meta name="mobile-web-app-capable" content="yes">
+<style>html,body{margin:0;background:#131519;}</style>
+</head>
+<body>
+<title>光室 · 照片修圖</title>
+<style>
+  /* ============================================================
+     光室 Darkroom — 單一深色視覺（暗房安全燈：冷炭底 + 琥珀）
+     編修工具刻意固定深色，讓眼睛對照片顏色的判斷不受介面干擾。
+     所有顏色皆明確指定，不依賴宿主主題。
+     ============================================================ */
+  :root {
+    --ink:        #131519;
+    --stage:      #0c0d10;
+    --panel:      #1a1d23;
+    --panel-hi:   #22262e;
+    --line:       #2c313a;
+    --text:       #e9e6e0;
+    --muted:      #949aa5;
+    --safelight:  #e8873a;
+    --safe-dim:   rgba(232,135,58,0.14);
+    --safe-line:  rgba(232,135,58,0.45);
+    --danger:     #d8624f;
+
+    --sans: "Helvetica Neue", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+    --r: 10px;
+  }
+
+  * { box-sizing: border-box; }
+  /* 下面有元素用 display:grid/flex，會蓋掉瀏覽器預設的 [hidden]，這裡統一補回來 */
+  [hidden] { display: none !important; }
+
+  body {
+    margin: 0;
+    background: var(--ink);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #app {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    min-height: 100dvh;
+  }
+
+  /* ---------- 頂列 ---------- */
+  #bar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    background: var(--ink);
+  }
+  .brand { display: flex; align-items: baseline; gap: 8px; }
+  .brand b {
+    font-size: 17px; font-weight: 700; letter-spacing: 0.08em;
+  }
+  .brand i {
+    font-family: var(--mono); font-style: normal;
+    font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--safelight);
+  }
+  .bar-acts { display: flex; gap: 8px; }
+
+  /* ---------- 按鈕 ---------- */
+  button {
+    font-family: inherit; font-size: 13px; color: var(--text);
+    background: var(--panel-hi); border: 1px solid var(--line);
+    border-radius: var(--r); padding: 8px 14px;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: #3a4049; }
+  button:disabled { opacity: 0.38; cursor: default; }
+  button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--safelight); outline-offset: 2px;
+  }
+  button.primary {
+    background: var(--safelight); border-color: var(--safelight); color: #241202;
+    font-weight: 700;
+  }
+  button.primary:hover:not(:disabled) { background: #f0954c; border-color: #f0954c; }
+  button.ghost { background: transparent; }
+
+  /* ---------- 照片檯 ---------- */
+  #stage {
+    position: relative;
+    display: grid; place-items: center;
+    background: var(--stage);
+    padding: 14px;
+    min-height: 240px;
+    overflow: hidden;
+  }
+  #view {
+    max-width: 100%; max-height: 100%;
+    display: block; border-radius: 6px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+    touch-action: none;
+  }
+  #view[hidden] { display: none; }
+
+  #empty {
+    display: grid; gap: 16px; justify-items: center; text-align: center;
+    padding: 32px 20px; max-width: 400px;
+  }
+  #empty p { margin: 0; color: var(--muted); font-size: 14px; }
+  #empty .pick { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .frame-mark {
+    width: 72px; height: 72px; border: 1px solid var(--safe-line); border-radius: 4px;
+    position: relative;
+  }
+  .frame-mark::before, .frame-mark::after {
+    content: ""; position: absolute; background: var(--safelight);
+  }
+  .frame-mark::before { left: 50%; top: 26px; bottom: 26px; width: 1px; transform: translateX(-0.5px); }
+  .frame-mark::after  { top: 50%; left: 26px; right: 26px; height: 1px; transform: translateY(-0.5px); }
+
+  #hold {
+    position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em;
+    color: var(--muted); background: rgba(12,13,16,0.82);
+    border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px;
+    pointer-events: none;
+  }
+  #hold[hidden] { display: none; }
+
+  #busy {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    background: rgba(12,13,16,0.7);
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.2em;
+    color: var(--safelight);
+  }
+
+  /* ---------- 自拍模式 ---------- */
+  #liveBar {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 14px 18px;
+    background: linear-gradient(to top, rgba(12,13,16,0.92), rgba(12,13,16,0));
+  }
+  #shutter {
+    width: 62px; height: 62px; border-radius: 50%; padding: 0;
+    background: var(--safelight); border: 4px solid rgba(255,255,255,0.85);
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.4);
+  }
+  #liveBar .side { min-width: 74px; }
+  #liveBar .side:last-child { text-align: right; }
+
+  #camMsg {
+    position: absolute; left: 14px; right: 14px; top: 14px;
+    background: var(--panel); border: 1px solid var(--safe-line);
+    border-radius: var(--r); padding: 12px 14px;
+    font-size: 13px; color: var(--text); line-height: 1.5;
+  }
+  #camMsg b { color: var(--safelight); }
+  #busy[hidden] { display: none; }
+
+  /* ---------- 分頁 ---------- */
+  #tabs {
+    display: flex; gap: 4px; padding: 8px 10px 0;
+    border-top: 1px solid var(--line);
+    background: var(--panel);
+    overflow-x: auto;
+  }
+  .tab {
+    flex: 0 0 auto;
+    background: transparent; border: 0; border-bottom: 2px solid transparent;
+    border-radius: 0; padding: 8px 14px 10px;
+    color: var(--muted); font-size: 14px;
+  }
+  .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--safelight); font-weight: 600; }
+
+  /* ---------- 控制面板 ---------- */
+  #panel {
+    background: var(--panel);
+    padding: 14px 14px 18px;
+    border-top: 1px solid var(--line);
+  }
+  .pane { display: none; }
+  .pane.on { display: grid; gap: 14px; }
+
+  /* 濾鏡接觸印樣 */
+  #sheet {
+    display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px;
+    scrollbar-width: thin;
+  }
+  .chip {
+    flex: 0 0 auto; display: grid; gap: 6px; justify-items: center;
+    background: transparent; border: 0; padding: 0; border-radius: 8px;
+  }
+  .chip canvas {
+    width: 68px; height: 68px; border-radius: 6px; display: block;
+    border: 2px solid transparent; background: #000;
+  }
+  .chip span {
+    font-size: 11px; color: var(--muted); letter-spacing: 0.04em;
+  }
+  .chip[aria-pressed="true"] canvas { border-color: var(--safelight); }
+  .chip[aria-pressed="true"] span { color: var(--text); }
+
+  /* 滑桿 */
+  .ctl { display: grid; gap: 6px; }
+  .ctl-top {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  }
+  .ctl-top label {
+    font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted);
+  }
+  .ctl-top output {
+    font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 22px; background: transparent; margin: 0; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 2px; background: var(--line); border-radius: 2px;
+  }
+  input[type="range"]::-moz-range-track {
+    height: 2px; background: var(--line); border-radius: 2px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 18px; height: 18px; margin-top: -8px; border-radius: 50%;
+    background: var(--safelight); border: 0;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--safelight); border: 0;
+  }
+
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* ---------- 底座 ---------- */
+  #dock {
+    display: flex; gap: 8px; align-items: center;
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    background: var(--ink);
+  }
+  #dock .spacer { flex: 1; }
+  .hint {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em;
+    color: var(--muted); text-transform: uppercase;
+  }
+  input[type="file"] { display: none; }
+
+  /* ---------- 成品覆蓋層 ---------- */
+  #done {
+    position: fixed; inset: 0; z-index: 50;
+    background: #0a0b0e;
+    display: grid; grid-template-rows: auto 1fr auto; gap: 12px; padding: 14px;
+  }
+  #done[hidden] { display: none; }
+  #done .head { display: flex; justify-content: space-between; align-items: center; }
+  #done .head strong { font-size: 15px; }
+  /* 巢狀 grid 裡的百分比高度沒有明確參考框，改用絕對定位把照片框死在這一格 */
+  #doneWrap { position: relative; overflow: hidden; min-height: 0; }
+  #doneImg {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%; object-fit: contain;
+    border-radius: 6px; display: block;
+  }
+  #done .foot { display: grid; gap: 8px; justify-items: center; }
+  #done .foot p { margin: 0; font-size: 13px; color: var(--muted); text-align: center; }
+
+  /* ---------- 桌機 ---------- */
+  @media (min-width: 900px) {
+    #app {
+      grid-template-columns: minmax(0,1fr) 360px;
+      grid-template-rows: auto auto minmax(0,1fr) auto;
+      height: 100dvh;
+    }
+    #bar   { grid-area: 1 / 1 / 2 / 3; }
+    #stage { grid-area: 2 / 1 / 4 / 2; }
+    #tabs  { grid-area: 2 / 2 / 3 / 3; border-top: 0; border-left: 1px solid var(--line); }
+    #panel { grid-area: 3 / 2 / 4 / 3; border-top: 0; border-left: 1px solid var(--line); overflow-y: auto; }
+    #dock  { grid-area: 4 / 1 / 5 / 3; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div id="app">
+  <header id="bar">
+    <div class="brand"><b>光室</b><i>Darkroom</i></div>
+    <div class="bar-acts">
+      <button id="btnReset" class="ghost" disabled>重設</button>
+      <button id="btnExport" class="primary" disabled>儲存照片</button>
+    </div>
+  </header>
+
+  <main id="stage">
+    <canvas id="view" hidden></canvas>
+    <div id="empty">
+      <div class="frame-mark" aria-hidden="true"></div>
+      <p>選一張照片開始編修。<br>照片只留在這台裝置的瀏覽器裡，不會上傳。</p>
+      <div class="pick">
+        <button id="btnLive1" class="primary">開前鏡頭自拍</button>
+        <button id="btnPick1">選擇照片</button>
+        <button id="btnShoot1">用相機拍</button>
+      </div>
+    </div>
+    <div id="hold" hidden>按住畫面看原圖</div>
+    <div id="busy" hidden>處理中</div>
+    <div id="liveBar" hidden>
+      <span class="side"><button id="btnCancelLive" class="ghost">取消</button></span>
+      <button id="shutter" aria-label="拍攝"></button>
+      <span class="side"><button id="btnFlipCam" class="ghost">翻轉</button></span>
+    </div>
+    <div id="camMsg" hidden></div>
+  </main>
+
+  <nav id="tabs" role="tablist" aria-label="編修工具">
+    <button class="tab" role="tab" aria-selected="true"  data-pane="look">濾鏡</button>
+    <button class="tab" role="tab" aria-selected="false" data-pane="skin">美顏</button>
+    <button class="tab" role="tab" aria-selected="false" data-pane="face">臉型</button>
+    <button class="tab" role="tab" aria-selected="false" data-pane="tone">調整</button>
+    <button class="tab" role="tab" aria-selected="false" data-pane="geo">旋轉裁切</button>
+  </nav>
+
+  <section id="panel">
+    <div class="pane on" data-pane="look">
+      <div id="sheet"><span class="hint">先載入照片</span></div>
+    </div>
+
+    <div class="pane" data-pane="skin">
+      <div class="ctl"><div class="ctl-top"><label for="s_smooth">磨皮</label><output id="o_smooth">0</output></div>
+        <input type="range" id="s_smooth" data-k="smooth" min="0" max="100" value="0"></div>
+      <div class="ctl"><div class="ctl-top"><label for="s_glow">亮膚</label><output id="o_glow">0</output></div>
+        <input type="range" id="s_glow" data-k="glow" min="0" max="100" value="0"></div>
+      <div class="ctl"><div class="ctl-top"><label for="s_rosy">紅潤</label><output id="o_rosy">0</output></div>
+        <input type="range" id="s_rosy" data-k="rosy" min="0" max="100" value="0"></div>
+      <div class="ctl"><div class="ctl-top"><label for="s_sharpen">銳利</label><output id="o_sharpen">0</output></div>
+        <input type="range" id="s_sharpen" data-k="sharpen" min="0" max="100" value="0"></div>
+      <p class="hint">磨皮只作用在偵測到的膚色區域，並會避開眼睛、髮絲等高反差邊緣。</p>
+    </div>
+
+    <div class="pane" data-pane="face">
+      <div class="row"><button id="btnAutoFace" class="primary">自動對準臉</button></div>
+      <p class="hint">載入照片時會自動抓一次臉。抓不準的話，直接把橘色橢圓拖到你的臉上，再調「臉框大小」。</p>
+      <div class="ctl"><div class="ctl-top"><label for="s_fsize">臉框大小</label><output id="o_fsize">30</output></div>
+        <input type="range" id="s_fsize" data-f="size" min="10" max="70" value="30"></div>
+      <div class="ctl"><div class="ctl-top"><label for="s_slim">瘦臉</label><output id="o_slim">0</output></div>
+        <input type="range" id="s_slim" data-f="slim" min="0" max="100" value="0"></div>
+      <div class="ctl"><div class="ctl-top"><label for="s_eyes">大眼</label><output id="o_eyes">0</output></div>
+        <input type="range" id="s_eyes" data-f="eyes" min="0" max="100" value="0"></div>
+      <div class="ctl"><div class="ctl-top"><label for="s_chin">短下巴</label><output id="o_chin">0</output></div>
+        <input type="range" id="s_chin" data-f="chin" min="0" max="100" value="0"></div>
+    </div>
+
+    <div class="pane" data-pane="tone">
+      <div class="ctl"><div class="ctl-top"><label for="s_bright">亮度</label><output id="o_bright">0</output></div>
+        <input type="range" id="s_bright" data-k="bright" min="-100" max="100" value="0"></div>
+      <div class="ctl"><div class="ctl-top"><label for="s_contrast">對比</label><output id="o_contrast">0</output></div>
+        <input type="range" id="s_contrast" data-k="contrast" min="-100" max="100" value="0"></div>
+      <div class="ctl"><div class="ctl-top"><label for="s_sat">飽和度</label><output id="o_sat">0</output></div>
+        <input type="range" id="s_sat" data-k="sat" min="-100" max="100" value="0"></div>
+      <div class="ctl"><div class="ctl-top"><label for="s_warm">色溫</label><output id="o_warm">0</output></div>
+        <input type="range" id="s_warm" data-k="warm" min="-100" max="100" value="0"></div>
+      <div class="ctl"><div class="ctl-top"><label for="s_fade">褪色</label><output id="o_fade">0</output></div>
+        <input type="range" id="s_fade" data-k="fade" min="0" max="100" value="0"></div>
+      <div class="ctl"><div class="ctl-top"><label for="s_vig">暗角</label><output id="o_vig">0</output></div>
+        <input type="range" id="s_vig" data-k="vig" min="0" max="100" value="0"></div>
+    </div>
+
+    <div class="pane" data-pane="geo">
+      <div class="row">
+        <button data-rot="-90">↺ 左轉 90°</button>
+        <button data-rot="90">↻ 右轉 90°</button>
+        <button id="btnFlipH">◀▶ 水平翻轉</button>
+        <button id="btnFlipV">▲▼ 垂直翻轉</button>
+      </div>
+      <div class="ctl">
+        <div class="ctl-top"><label for="s_crop">裁切比例</label><output id="o_crop">原始</output></div>
+        <div class="row" id="cropRow">
+          <button data-crop="0" aria-pressed="true">原始</button>
+          <button data-crop="1">1:1</button>
+          <button data-crop="0.8">4:5</button>
+          <button data-crop="0.5625">9:16</button>
+          <button data-crop="1.3333">4:3</button>
+        </div>
+      </div>
+      <p class="hint">裁切以畫面中心為基準。</p>
+    </div>
+  </section>
+
+  <footer id="dock">
+    <button id="btnLive2">自拍</button>
+    <button id="btnPick2">選擇照片</button>
+    <button id="btnShoot2">相機</button>
+    <span class="spacer"></span>
+    <span class="hint" id="meta">尚未載入</span>
+  </footer>
+</div>
+
+<div id="done" hidden>
+  <div class="head">
+    <strong>完成</strong>
+    <button id="btnCloseDone" class="ghost">關閉</button>
+  </div>
+  <div id="doneWrap"><img id="doneImg" alt="編修完成的照片"></div>
+  <div class="foot">
+    <button id="btnDownload" class="primary">下載到裝置</button>
+    <p>手機上也可以直接長按上方照片，選「加入照片」存到相簿。</p>
+  </div>
+</div>
+
+<input type="file" id="filePick" accept="image/*">
+<input type="file" id="fileShoot" accept="image/*" capture="user">
+
+<script>
+"use strict";
+
+/* ===========================================================
+   參數
+   =========================================================== */
+const DEFAULTS = {
+  smooth: 0, glow: 0, rosy: 0, sharpen: 0,
+  bright: 0, contrast: 0, sat: 0, warm: 0, fade: 0, vig: 0,
+  tint: null            // [r,g,b] 加色，濾鏡預設專用
+};
+const GEO = { rot: 0, flipH: false, flipV: false, crop: 0 };
+
+// 臉型：cx/cy/size 是相對比例，換解析度也一樣準
+const FACE_DEFAULTS = { cx: 0.5, cy: 0.42, size: 30, slim: 0, eyes: 0, chin: 0 };
+let FACE = Object.assign({}, FACE_DEFAULTS);
+let currentTab = "look";
+
+// 前鏡頭即時預覽
+const CAM = { on: false, stream: null, video: null, raf: 0, facing: "user" };
+
+let P = Object.assign({}, DEFAULTS);
+let srcImg = null;         // 原圖 (Image)
+let srcName = "photo";
+let previewData = null;    // 預覽用的原始 ImageData（已套用幾何）
+let thumbData = null;      // 濾鏡縮圖用的小張 ImageData
+let activeLook = "none";
+
+const PREVIEW_MAX = 1100;
+const THUMB = 68;
+
+/* ===========================================================
+   濾鏡預設 — 每個都是一組真實參數，不是貼圖
+   =========================================================== */
+const LOOKS = [
+  { id: "none",  name: "原圖", p: {} },
+  { id: "soft",  name: "柔光", p: { smooth: 45, glow: 28, contrast: -4, sat: -4 } },
+  { id: "clear", name: "淨白", p: { smooth: 55, glow: 52, warm: -10, sat: -12, contrast: 6 } },
+  { id: "sun",   name: "暖陽", p: { warm: 24, bright: 6, sat: 12, contrast: 8, vig: 12 } },
+  { id: "film",  name: "底片", p: { fade: 32, contrast: 14, sat: -10, tint: [6, 2, -6], vig: 18 } },
+  { id: "cool",  name: "冷調", p: { warm: -26, sat: -6, contrast: 10, tint: [-4, 0, 8] } },
+  { id: "mono",  name: "黑白", p: { sat: -100, contrast: 16, vig: 14 } },
+  { id: "rich",  name: "濃郁", p: { sat: 30, contrast: 18, vig: 26, bright: -3 } }
+];
+
+/* ===========================================================
+   DOM
+   =========================================================== */
+const $ = (s) => document.querySelector(s);
+const view = $("#view");
+const vctx = view.getContext("2d", { willReadFrequently: false });
+const stage = $("#stage");
+const empty = $("#empty");
+const hold = $("#hold");
+const busy = $("#busy");
+const meta = $("#meta");
+const sheet = $("#sheet");
+const btnExport = $("#btnExport");
+const btnReset = $("#btnReset");
+
+/* ===========================================================
+   影像處理核心
+   =========================================================== */
+
+// 可分離盒狀模糊（兩趟），回傳新的 Uint8ClampedArray
+function boxBlur(src, w, h, r) {
+  if (r < 1) return src.slice();
+  const tmp = new Uint8ClampedArray(src.length);
+  const out = new Uint8ClampedArray(src.length);
+  const span = r * 2 + 1;
+
+  // 水平
+  for (let y = 0; y < h; y++) {
+    const row = y * w * 4;
+    let sr = 0, sg = 0, sb = 0;
+    for (let i = -r; i <= r; i++) {
+      const x = Math.min(w - 1, Math.max(0, i)) * 4 + row;
+      sr += src[x]; sg += src[x + 1]; sb += src[x + 2];
+    }
+    for (let x = 0; x < w; x++) {
+      const o = row + x * 4;
+      tmp[o] = sr / span; tmp[o + 1] = sg / span; tmp[o + 2] = sb / span; tmp[o + 3] = src[o + 3];
+      const addX = Math.min(w - 1, x + r + 1) * 4 + row;
+      const subX = Math.max(0, x - r) * 4 + row;
+      sr += src[addX] - src[subX];
+      sg += src[addX + 1] - src[subX + 1];
+      sb += src[addX + 2] - src[subX + 2];
+    }
+  }
+  // 垂直
+  for (let x = 0; x < w; x++) {
+    const col = x * 4;
+    let sr = 0, sg = 0, sb = 0;
+    for (let i = -r; i <= r; i++) {
+      const y = Math.min(h - 1, Math.max(0, i)) * w * 4 + col;
+      sr += tmp[y]; sg += tmp[y + 1]; sb += tmp[y + 2];
+    }
+    for (let y = 0; y < h; y++) {
+      const o = y * w * 4 + col;
+      out[o] = sr / span; out[o + 1] = sg / span; out[o + 2] = sb / span; out[o + 3] = tmp[o + 3];
+      const addY = Math.min(h - 1, y + r + 1) * w * 4 + col;
+      const subY = Math.max(0, y - r) * w * 4 + col;
+      sr += tmp[addY] - tmp[subY];
+      sg += tmp[addY + 1] - tmp[subY + 1];
+      sb += tmp[addY + 2] - tmp[subY + 2];
+    }
+  }
+  return out;
+}
+
+const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
+
+/* -----------------------------------------------------------
+   臉型變形：反向映射 + 雙線性取樣
+   對每個輸出點推算它該從原圖的哪裡取色，所以不會有破洞。
+   ----------------------------------------------------------- */
+function warpFace(img, F) {
+  if (F.slim <= 0 && F.eyes <= 0 && F.chin <= 0) return img;
+
+  const w = img.width, h = img.height;
+  const s = img.data;
+  const out = new ImageData(w, h);
+  const o = out.data;
+
+  const cx = F.cx * w, cy = F.cy * h;
+  const R = (F.size / 100) * Math.min(w, h);   // 臉半徑
+  const slim = F.slim / 100, eyes = F.eyes / 100, chin = F.chin / 100;
+
+  // 眼睛位置（相對臉框）
+  const eOffX = R * 0.40, eOffY = -R * 0.26, eR = R * 0.44;
+  const eyeL = [cx - eOffX, cy + eOffY], eyeR = [cx + eOffX, cy + eOffY];
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let sx = x, sy = y;
+
+      /* 大眼：以眼睛為中心，向內取樣 → 放大 */
+      if (eyes > 0) {
+        for (const e of [eyeL, eyeR]) {
+          const dx = sx - e[0], dy = sy - e[1];
+          const d2 = dx * dx + dy * dy;
+          if (d2 < eR * eR) {
+            const t = 1 - Math.sqrt(d2) / eR;
+            const k = 1 - eyes * 0.42 * t * t;
+            sx = e[0] + dx * k;
+            sy = e[1] + dy * k;
+          }
+        }
+      }
+
+      /* 瘦臉：臉頰到下巴這一帶向外取樣 → 臉變窄 */
+      if (slim > 0) {
+        const ny = (sy - cy) / R;
+        if (ny > -0.35 && ny < 1.35) {
+          // 在顴骨到下巴之間最強，往上下衰減
+          const band = Math.max(0, 1 - Math.abs(ny - 0.42) / 0.95);
+          const dx = sx - cx;
+          const fall = Math.max(0, 1 - Math.abs(dx) / (R * 1.9));
+          sx = cx + dx * (1 + slim * 0.34 * band * band * fall);
+        }
+      }
+
+      /* 短下巴：下巴區往下取樣 → 內容上移，下巴收短 */
+      if (chin > 0) {
+        const ny = (sy - cy) / R;
+        if (ny > 0.35) {
+          const t = clamp01((ny - 0.35) / 0.85);
+          sy += chin * 0.20 * R * t * t;
+        }
+      }
+
+      /* 雙線性取樣 */
+      const o0 = (y * w + x) * 4;
+      if (sx <= 0) sx = 0; else if (sx >= w - 1) sx = w - 1.001;
+      if (sy <= 0) sy = 0; else if (sy >= h - 1) sy = h - 1.001;
+      const x0 = sx | 0, y0 = sy | 0;
+      const fx = sx - x0, fy = sy - y0;
+      const i00 = (y0 * w + x0) * 4, i10 = i00 + 4;
+      const i01 = i00 + w * 4, i11 = i01 + 4;
+      const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy);
+      const w01 = (1 - fx) * fy, w11 = fx * fy;
+      for (let c = 0; c < 3; c++) {
+        o[o0 + c] = s[i00 + c] * w00 + s[i10 + c] * w10 + s[i01 + c] * w01 + s[i11 + c] * w11;
+      }
+      o[o0 + 3] = 255;
+    }
+  }
+  return out;
+}
+
+// 就地套用整條管線
+function process(imgData, p) {
+  const d = imgData.data, w = imgData.width, h = imgData.height;
+  const n = d.length;
+
+  const smooth   = p.smooth / 100;
+  const glow     = p.glow / 100;
+  const rosy     = p.rosy / 100;
+  const sharpen  = p.sharpen / 100;
+  const bright   = p.bright / 100;
+  const contrast = p.contrast / 100;
+  const sat      = p.sat / 100;
+  const warm     = p.warm / 100;
+  const fade     = p.fade / 100;
+  const vig      = p.vig / 100;
+  const tint     = p.tint;
+
+  // 需要時才做模糊
+  let bigBlur = null, smallBlur = null;
+  if (smooth > 0 || glow > 0 || rosy > 0) {
+    const r = Math.max(1, Math.round(Math.min(w, h) / 150 * (0.5 + smooth * 0.9)));
+    bigBlur = boxBlur(d, w, h, r);
+  }
+  if (sharpen > 0) {
+    smallBlur = boxBlur(d, w, h, Math.max(1, Math.round(Math.min(w, h) / 600)));
+  }
+
+  // 對比查表
+  const cf = contrast >= 0 ? 1 + contrast * 1.1 : 1 + contrast * 0.9;
+  const bf = 1 + bright * 0.9;
+  const lut = new Uint8ClampedArray(256);
+  for (let i = 0; i < 256; i++) {
+    let v = i * bf;
+    v = (v - 128) * cf + 128;
+    if (fade > 0) v = v * (1 - fade * 0.28) + fade * 0.28 * 235 * (v / 255) + fade * 22;
+    lut[i] = v;
+  }
+
+  const cx = w / 2, cy = h / 2;
+  const maxR = Math.sqrt(cx * cx + cy * cy);
+
+  for (let i = 0, px = 0; i < n; i += 4, px++) {
+    let r = d[i], g = d[i + 1], b = d[i + 2];
+
+    /* --- 膚質：磨皮 / 亮膚 / 紅潤 --- */
+    if (bigBlur) {
+      const rb = r - b;
+      let skin = 0;
+      if (r > 45 && r >= g && g >= b) {
+        skin = clamp01((rb - 6) / 18) * clamp01((125 - rb) / 45);
+      }
+      if (skin > 0) {
+        const y0 = (r * 299 + g * 587 + b * 114) / 1000;
+        const y1 = (bigBlur[i] * 299 + bigBlur[i + 1] * 587 + bigBlur[i + 2] * 114) / 1000;
+        // 高反差處（眼、眉、髮、輪廓）不磨
+        const edge = clamp01(1 - Math.abs(y0 - y1) / 26);
+
+        if (smooth > 0) {
+          const wgt = smooth * skin * edge * 0.95;
+          r += (bigBlur[i] - r) * wgt;
+          g += (bigBlur[i + 1] - g) * wgt;
+          b += (bigBlur[i + 2] - b) * wgt;
+        }
+        if (glow > 0) {
+          const lift = glow * skin * 0.34;
+          r += (255 - r) * lift;
+          g += (255 - g) * lift * 0.94;
+          b += (255 - b) * lift * 0.86;
+        }
+        if (rosy > 0) {
+          r += rosy * skin * 20;
+          b -= rosy * skin * 7;
+        }
+      }
+    }
+
+    /* --- 銳利（遮罩銳化） --- */
+    if (smallBlur) {
+      const a = sharpen * 1.15;
+      r += (r - smallBlur[i]) * a;
+      g += (g - smallBlur[i + 1]) * a;
+      b += (b - smallBlur[i + 2]) * a;
+    }
+
+    /* --- 亮度 / 對比 / 褪色 --- */
+    r = lut[r < 0 ? 0 : r > 255 ? 255 : r | 0];
+    g = lut[g < 0 ? 0 : g > 255 ? 255 : g | 0];
+    b = lut[b < 0 ? 0 : b > 255 ? 255 : b | 0];
+
+    /* --- 飽和度 --- */
+    if (sat !== 0) {
+      const y = r * 0.299 + g * 0.587 + b * 0.114;
+      const s = 1 + sat;
+      r = y + (r - y) * s;
+      g = y + (g - y) * s;
+      b = y + (b - y) * s;
+    }
+
+    /* --- 色溫 --- */
+    if (warm !== 0) {
+      r += warm * 26;
+      g += warm * 6;
+      b -= warm * 26;
+    }
+
+    /* --- 濾鏡加色 --- */
+    if (tint) { r += tint[0]; g += tint[1]; b += tint[2]; }
+
+    /* --- 暗角 --- */
+    if (vig > 0) {
+      const dx = (px % w) - cx, dy = ((px / w) | 0) - cy;
+      const t = Math.sqrt(dx * dx + dy * dy) / maxR;
+      const k = 1 - vig * 0.85 * clamp01((t - 0.42) / 0.58) ** 1.6;
+      r *= k; g *= k; b *= k;
+    }
+
+    d[i]     = r < 0 ? 0 : r > 255 ? 255 : r;
+    d[i + 1] = g < 0 ? 0 : g > 255 ? 255 : g;
+    d[i + 2] = b < 0 ? 0 : b > 255 ? 255 : b;
+  }
+  return imgData;
+}
+
+/* ===========================================================
+   幾何：旋轉 / 翻轉 / 裁切 → 產生來源畫布
+   =========================================================== */
+function drawGeometry(img, maxEdge) {
+  const swapped = GEO.rot === 90 || GEO.rot === 270;
+  let iw = img.naturalWidth || img.width;
+  let ih = img.naturalHeight || img.height;
+
+  // 裁切（以中心為準，套用在旋轉後的方向上）
+  let vw = swapped ? ih : iw;
+  let vh = swapped ? iw : ih;
+  let cw = vw, ch = vh;
+  if (GEO.crop > 0) {
+    const target = GEO.crop;          // 寬 / 高
+    if (vw / vh > target) cw = vh * target; else ch = vw / target;
+  }
+
+  let scale = 1;
+  if (maxEdge) scale = Math.min(1, maxEdge / Math.max(cw, ch));
+  const outW = Math.max(1, Math.round(cw * scale));
+  const outH = Math.max(1, Math.round(ch * scale));
+
+  const c = document.createElement("canvas");
+  c.width = outW; c.height = outH;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingQuality = "high";
+
+  ctx.translate(outW / 2, outH / 2);
+  ctx.rotate(GEO.rot * Math.PI / 180);
+  ctx.scale(GEO.flipH ? -1 : 1, GEO.flipV ? -1 : 1);
+  ctx.drawImage(img, -iw * scale / 2, -ih * scale / 2, iw * scale, ih * scale);
+
+  return { canvas: c, ctx, w: outW, h: outH };
+}
+
+/* ===========================================================
+   繪製
+   =========================================================== */
+function rebuildPreview() {
+  if (!srcImg) return;
+  const g = drawGeometry(srcImg, PREVIEW_MAX);
+  previewData = g.ctx.getImageData(0, 0, g.w, g.h);
+  view.width = g.w;
+  view.height = g.h;
+  fitView();
+  render();
+}
+
+function fitView() {
+  const pad = 28;
+  const availW = stage.clientWidth - pad;
+  const availH = stage.clientHeight - pad;
+  const k = Math.min(availW / view.width, availH / view.height, 1);
+  view.style.width = Math.max(1, Math.round(view.width * k)) + "px";
+  view.style.height = Math.max(1, Math.round(view.height * k)) + "px";
+}
+
+let raf = 0;
+function render() {
+  if (!previewData || CAM.on) return;
+  cancelAnimationFrame(raf);
+  raf = requestAnimationFrame(() => {
+    let work = new ImageData(
+      new Uint8ClampedArray(previewData.data),
+      previewData.width, previewData.height
+    );
+    work = warpFace(work, FACE);
+    process(work, P);
+    vctx.putImageData(work, 0, 0);
+    drawGuide();
+  });
+}
+
+function showOriginal(on) {
+  if (!previewData || CAM.on) return;
+  if (on) {
+    vctx.putImageData(previewData, 0, 0);
+  } else {
+    render();
+  }
+}
+
+// 臉框導引線（只畫在畫面上，不會進到照片裡）
+function drawGuide() {
+  if (currentTab !== "face" || !previewData) return;
+  const cx = FACE.cx * view.width, cy = FACE.cy * view.height;
+  const R = (FACE.size / 100) * Math.min(view.width, view.height);
+  vctx.save();
+  vctx.strokeStyle = "#e8873a";
+  vctx.lineWidth = Math.max(2, view.width / 350);
+  vctx.setLineDash([12, 9]);
+  vctx.beginPath();
+  vctx.ellipse(cx, cy, R * 0.86, R * 1.16, 0, 0, Math.PI * 2);
+  vctx.stroke();
+  vctx.setLineDash([]);
+  vctx.globalAlpha = 0.75;
+  vctx.beginPath();
+  vctx.arc(cx, cy, Math.max(3, view.width / 220), 0, Math.PI * 2);
+  vctx.fillStyle = "#e8873a";
+  vctx.fill();
+  vctx.restore();
+}
+
+/* ===========================================================
+   自動對準臉
+   用膚色區域推估臉的位置與大小。不需要任何模型檔，離線也能跑；
+   代價是遇到大片膚色背景或多張臉會抓偏，所以一定留手動微調。
+   =========================================================== */
+function autoFace() {
+  if (!previewData) return false;
+  const w = previewData.width, h = previewData.height, d = previewData.data;
+  const step = Math.max(1, Math.round(Math.min(w, h) / 200));
+  const cw = Math.ceil(w / step), ch = Math.ceil(h / step);
+  const mask = new Uint8Array(cw * ch);
+  const rows = new Int32Array(ch);
+  let total = 0;
+
+  for (let y = 0, gy = 0; y < h && gy < ch; y += step, gy++) {
+    for (let x = 0, gx = 0; x < w && gx < cw; x += step, gx++) {
+      const i = (y * w + x) * 4;
+      const r = d[i], g = d[i + 1], b = d[i + 2], rb = r - b;
+      if (r > 60 && r >= g && g >= b && rb > 12 && rb < 120) {
+        mask[gy * cw + gx] = 1;
+        rows[gy]++;
+        total++;
+      }
+    }
+  }
+  if (total < cw * ch * 0.02) return false;          // 膚色太少，放棄
+
+  let maxRow = 0;
+  for (let i = 0; i < ch; i++) if (rows[i] > maxRow) maxRow = rows[i];
+  const thr = maxRow * 0.28;
+
+  let top = -1, bottom = -1;
+  for (let y = 0; y < ch; y++) {
+    if (rows[y] > thr) { if (top < 0) top = y; bottom = y; }
+  }
+  if (top < 0) return false;
+
+  // 臉的最寬處在上半部（下半部通常是脖子和肩膀，會把寬度撐大）
+  const half = Math.min(ch - 1, top + Math.max(1, Math.round((bottom - top) * 0.55)));
+  let bestW = -1, bestL = 0, bestR = 0;
+  for (let y = top; y <= half; y++) {
+    let l = -1, r = -1;
+    for (let x = 0; x < cw; x++) if (mask[y * cw + x]) { if (l < 0) l = x; r = x; }
+    if (l >= 0 && r - l > bestW) { bestW = r - l; bestL = l; bestR = r; }
+  }
+  if (bestW <= 0) return false;
+
+  const R = (bestW * step) / 2 / 0.86;               // 導引橢圓的 rx 是 0.86R
+  FACE.cx = clamp01(((bestL + bestR) / 2 * step) / w);
+  FACE.cy = clamp01((top * step + R * 1.16) / h);
+  FACE.size = Math.min(70, Math.max(10, Math.round(R / Math.min(w, h) * 100)));
+  return true;
+}
+
+/* ===========================================================
+   濾鏡接觸印樣
+   =========================================================== */
+function buildSheet() {
+  if (!srcImg) return;
+  // 方形置中小圖
+  const s = Math.min(srcImg.naturalWidth, srcImg.naturalHeight);
+  const c = document.createElement("canvas");
+  c.width = THUMB * 2; c.height = THUMB * 2;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(
+    srcImg,
+    (srcImg.naturalWidth - s) / 2, (srcImg.naturalHeight - s) / 2, s, s,
+    0, 0, c.width, c.height
+  );
+  thumbData = ctx.getImageData(0, 0, c.width, c.height);
+
+  sheet.textContent = "";
+  for (const look of LOOKS) {
+    const btn = document.createElement("button");
+    btn.className = "chip";
+    btn.type = "button";
+    btn.setAttribute("aria-pressed", String(look.id === activeLook));
+    btn.dataset.look = look.id;
+
+    const cv = document.createElement("canvas");
+    cv.width = THUMB * 2; cv.height = THUMB * 2;
+    const cctx = cv.getContext("2d");
+    const data = new ImageData(
+      new Uint8ClampedArray(thumbData.data), thumbData.width, thumbData.height
+    );
+    process(data, Object.assign({}, DEFAULTS, look.p));
+    cctx.putImageData(data, 0, 0);
+
+    const label = document.createElement("span");
+    label.textContent = look.name;
+
+    btn.append(cv, label);
+    btn.addEventListener("click", () => applyLook(look.id));
+    sheet.append(btn);
+  }
+}
+
+function applyLook(id) {
+  const look = LOOKS.find((l) => l.id === id);
+  if (!look) return;
+  activeLook = id;
+  P = Object.assign({}, DEFAULTS, look.p);
+  syncSliders();
+  sheet.querySelectorAll(".chip").forEach((c) => {
+    c.setAttribute("aria-pressed", String(c.dataset.look === id));
+  });
+  render();
+}
+
+/* ===========================================================
+   滑桿
+   =========================================================== */
+const sliders = Array.from(document.querySelectorAll('input[type="range"][data-k]'));
+const faceSliders = Array.from(document.querySelectorAll('input[type="range"][data-f]'));
+
+function syncSliders() {
+  for (const el of sliders) {
+    el.value = P[el.dataset.k];
+    document.querySelector("#o_" + el.id.slice(2)).textContent = P[el.dataset.k];
+  }
+  for (const el of faceSliders) {
+    el.value = FACE[el.dataset.f];
+    document.querySelector("#o_" + el.id.slice(2)).textContent = FACE[el.dataset.f];
+  }
+}
+
+// 臉型滑桿獨立於色彩參數：換濾鏡不會把瘦臉大眼洗掉
+for (const el of faceSliders) {
+  el.addEventListener("input", () => {
+    FACE[el.dataset.f] = Number(el.value);
+    document.querySelector("#o_" + el.id.slice(2)).textContent = el.value;
+    render();
+  });
+}
+
+for (const el of sliders) {
+  el.addEventListener("input", () => {
+    P[el.dataset.k] = Number(el.value);
+    document.querySelector("#o_" + el.id.slice(2)).textContent = el.value;
+    // 手動調整就脫離預設濾鏡
+    if (activeLook !== "custom") {
+      activeLook = "custom";
+      sheet.querySelectorAll(".chip").forEach((c) => c.setAttribute("aria-pressed", "false"));
+    }
+    render();
+  });
+}
+
+/* ===========================================================
+   分頁
+   =========================================================== */
+document.querySelectorAll(".tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    currentTab = tab.dataset.pane;
+    document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", String(t === tab)));
+    document.querySelectorAll(".pane").forEach((p) => p.classList.toggle("on", p.dataset.pane === tab.dataset.pane));
+    hold.textContent = currentTab === "face" ? "拖曳橢圓對準你的臉" : "按住畫面看原圖";
+    render();   // 進出「臉型」分頁時顯示／收起臉框
+  });
+});
+
+/* ===========================================================
+   幾何操作
+   =========================================================== */
+document.querySelectorAll("[data-rot]").forEach((b) => {
+  b.addEventListener("click", () => {
+    GEO.rot = (GEO.rot + Number(b.dataset.rot) + 360) % 360;
+    rebuildPreview();
+  });
+});
+$("#btnFlipH").addEventListener("click", () => { GEO.flipH = !GEO.flipH; rebuildPreview(); });
+$("#btnFlipV").addEventListener("click", () => { GEO.flipV = !GEO.flipV; rebuildPreview(); });
+
+$("#cropRow").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-crop]");
+  if (!b) return;
+  GEO.crop = Number(b.dataset.crop);
+  $("#cropRow").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  $("#o_crop").textContent = b.textContent;
+  rebuildPreview();
+});
+
+/* ===========================================================
+   載入照片
+   =========================================================== */
+function loadFile(file, after) {
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    srcImg = img;
+    srcName = (file.name || "photo").replace(/\.[^.]+$/, "");
+    GEO.rot = 0; GEO.flipH = false; GEO.flipV = false; GEO.crop = 0;
+    $("#cropRow").querySelectorAll("button").forEach((x, i) => x.setAttribute("aria-pressed", String(i === 0)));
+    $("#o_crop").textContent = "原始";
+    P = Object.assign({}, DEFAULTS);
+    FACE = Object.assign({}, FACE_DEFAULTS);
+    activeLook = "none";
+    syncSliders();
+
+    empty.hidden = true;
+    view.hidden = false;
+    hold.hidden = false;
+    btnExport.disabled = false;
+    btnReset.disabled = false;
+    meta.textContent = img.naturalWidth + " × " + img.naturalHeight;
+
+    rebuildPreview();
+    autoFace();
+    syncSliders();
+    buildSheet();
+    URL.revokeObjectURL(url);
+    if (after) after();
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    meta.textContent = "無法讀取這個檔案，換一張試試";
+  };
+  img.src = url;
+}
+
+$("#filePick").addEventListener("change", (e) => loadFile(e.target.files[0]));
+$("#fileShoot").addEventListener("change", (e) => loadFile(e.target.files[0]));
+$("#btnPick1").addEventListener("click", () => $("#filePick").click());
+$("#btnPick2").addEventListener("click", () => $("#filePick").click());
+$("#btnShoot1").addEventListener("click", () => $("#fileShoot").click());
+$("#btnShoot2").addEventListener("click", () => $("#fileShoot").click());
+
+// 拖放
+stage.addEventListener("dragover", (e) => { e.preventDefault(); });
+stage.addEventListener("drop", (e) => {
+  e.preventDefault();
+  const f = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f && f.type.startsWith("image/")) loadFile(f);
+});
+
+/* ===========================================================
+   按住看原圖
+   =========================================================== */
+let dragging = false;
+
+// 把畫面座標換算成畫布內的比例座標
+function toCanvasRatio(e) {
+  const r = view.getBoundingClientRect();
+  return {
+    cx: clamp01((e.clientX - r.left) / r.width),
+    cy: clamp01((e.clientY - r.top) / r.height)
+  };
+}
+
+view.addEventListener("pointerdown", (e) => {
+  if (CAM.on) return;
+  view.setPointerCapture(e.pointerId);
+  if (currentTab === "face") {
+    // 臉型分頁：拖曳移動臉框
+    dragging = true;
+    Object.assign(FACE, toCanvasRatio(e));
+    render();
+  } else {
+    showOriginal(true);
+  }
+});
+view.addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  Object.assign(FACE, toCanvasRatio(e));
+  render();
+});
+function endPointer() {
+  if (dragging) { dragging = false; return; }
+  showOriginal(false);
+}
+view.addEventListener("pointerup", endPointer);
+view.addEventListener("pointercancel", endPointer);
+
+/* ===========================================================
+   重設 / 匯出
+   =========================================================== */
+btnReset.addEventListener("click", () => {
+  P = Object.assign({}, DEFAULTS);
+  FACE = Object.assign({}, FACE_DEFAULTS);
+  activeLook = "none";
+  syncSliders();
+  sheet.querySelectorAll(".chip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.look === "none")));
+  render();
+});
+
+btnExport.addEventListener("click", () => {
+  if (!srcImg) return;
+  busy.hidden = false;
+  // 讓瀏覽器先畫出「處理中」再開始重運算
+  setTimeout(() => {
+    try {
+      // 上限 3000px：手機瀏覽器對大張 canvas 的記憶體較吃緊
+      const g = drawGeometry(srcImg, 3000);
+      let data = g.ctx.getImageData(0, 0, g.w, g.h);
+      data = warpFace(data, FACE);
+      process(data, P);
+      g.ctx.putImageData(data, 0, 0);
+      g.canvas.toBlob((blob) => {
+        const url = URL.createObjectURL(blob);
+        const img = $("#doneImg");
+        img.src = url;
+        $("#btnDownload").onclick = () => {
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = srcName + "-光室.jpg";
+          a.click();
+        };
+        $("#done").hidden = false;
+        busy.hidden = true;
+      }, "image/jpeg", 0.92);
+    } catch (err) {
+      busy.hidden = true;
+      meta.textContent = "匯出失敗：" + err.message;
+    }
+  }, 30);
+});
+
+$("#btnCloseDone").addEventListener("click", () => { $("#done").hidden = true; });
+
+/* ===========================================================
+   前鏡頭自拍
+   即時預覽用 canvas 原生 filter 做近似（跑得動 60fps）；
+   按下快門後的那張才走完整的逐像素管線。
+   =========================================================== */
+const liveBar = $("#liveBar");
+const camMsg = $("#camMsg");
+
+function liveFilter() {
+  const b = 1 + (P.bright / 100) * 0.35 + (P.glow / 100) * 0.22;
+  const c = 1 + (P.contrast / 100) * 0.4;
+  const s = 1 + (P.sat / 100) * 0.6;
+  const sep = P.warm > 0 ? (P.warm / 100) * 0.35 : 0;
+  return `brightness(${b}) contrast(${c}) saturate(${s}) sepia(${sep})`;
+}
+
+function liveFrame() {
+  if (!CAM.on) return;
+  const v = CAM.video;
+  if (v.videoWidth) {
+    if (view.width !== v.videoWidth || view.height !== v.videoHeight) {
+      view.width = v.videoWidth;
+      view.height = v.videoHeight;
+      fitView();
+    }
+    vctx.save();
+    // 前鏡頭鏡像，看起來才跟照鏡子一樣
+    if (CAM.facing === "user") vctx.setTransform(-1, 0, 0, 1, view.width, 0);
+    vctx.filter = liveFilter();
+    vctx.drawImage(v, 0, 0, view.width, view.height);
+    if (P.smooth > 0) {
+      const r = Math.max(1, (view.width / 300) * (P.smooth / 100));
+      vctx.filter = `blur(${r.toFixed(1)}px) ` + liveFilter();
+      vctx.globalAlpha = Math.min(0.8, (P.smooth / 100) * 0.85);
+      vctx.drawImage(v, 0, 0, view.width, view.height);
+      vctx.globalAlpha = 1;
+    }
+    vctx.restore();
+    vctx.filter = "none";
+  }
+  CAM.raf = requestAnimationFrame(liveFrame);
+}
+
+async function startLive() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    return camFail("這個瀏覽器不支援直接開相機。");
+  }
+  camMsg.hidden = true;
+  try {
+    CAM.stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: CAM.facing, width: { ideal: 1440 }, height: { ideal: 1920 } },
+      audio: false
+    });
+  } catch (err) {
+    return camFail(err && err.name === "NotAllowedError"
+      ? "相機權限被擋住了。"
+      : "打不開相機（" + (err && err.name ? err.name : "未知錯誤") + "）。");
+  }
+
+  if (!CAM.video) {
+    CAM.video = document.createElement("video");
+    CAM.video.playsInline = true;
+    CAM.video.muted = true;
+  }
+  CAM.video.srcObject = CAM.stream;
+  await CAM.video.play();
+
+  CAM.on = true;
+  empty.hidden = true;
+  view.hidden = false;
+  hold.hidden = true;
+  liveBar.hidden = false;
+  btnExport.disabled = true;
+  btnReset.disabled = false;
+  meta.textContent = "自拍中";
+  liveFrame();
+}
+
+function camFail(reason) {
+  camMsg.hidden = false;
+  camMsg.innerHTML = reason +
+    "<br><b>改用下面的「相機」按鈕</b>——那會叫出手機內建相機拍一張，拍完一樣可以在這裡美顏。";
+  setTimeout(() => { camMsg.hidden = true; }, 9000);
+}
+
+function stopLive() {
+  CAM.on = false;
+  cancelAnimationFrame(CAM.raf);
+  if (CAM.stream) {
+    CAM.stream.getTracks().forEach((t) => t.stop());
+    CAM.stream = null;
+  }
+  liveBar.hidden = true;
+  if (srcImg) {
+    hold.hidden = false;
+    btnExport.disabled = false;
+  } else {
+    view.hidden = true;
+    empty.hidden = false;
+    btnReset.disabled = true;
+    meta.textContent = "尚未載入";
+  }
+}
+
+function shutter() {
+  const v = CAM.video;
+  if (!v || !v.videoWidth) return;
+  const c = document.createElement("canvas");
+  c.width = v.videoWidth;
+  c.height = v.videoHeight;
+  const x = c.getContext("2d");
+  if (CAM.facing === "user") x.setTransform(-1, 0, 0, 1, c.width, 0);
+  x.drawImage(v, 0, 0);
+  // 保留目前的美顏設定，快門後直接接續調整
+  const keep = Object.assign({}, P);
+  c.toBlob((blob) => {
+    stopLive();
+    loadFile(new File([blob], "selfie.jpg", { type: "image/jpeg" }), () => {
+      P = keep;
+      syncSliders();
+      render();
+    });
+  }, "image/jpeg", 0.95);
+}
+
+$("#btnAutoFace").addEventListener("click", () => {
+  if (autoFace()) { syncSliders(); render(); }
+  else meta.textContent = "抓不到臉，請手動拖曳橢圓";
+});
+
+$("#shutter").addEventListener("click", shutter);
+$("#btnCancelLive").addEventListener("click", stopLive);
+$("#btnFlipCam").addEventListener("click", async () => {
+  CAM.facing = CAM.facing === "user" ? "environment" : "user";
+  stopLive();
+  await startLive();
+});
+$("#btnLive1").addEventListener("click", startLive);
+$("#btnLive2").addEventListener("click", () => { if (CAM.on) stopLive(); else startLive(); });
+
+/* ===========================================================
+   視窗調整
+   =========================================================== */
+let resizeT = 0;
+const refit = () => { clearTimeout(resizeT); resizeT = setTimeout(fitView, 80); };
+window.addEventListener("resize", refit);
+if (window.ResizeObserver) new ResizeObserver(refit).observe(stage);
+
+syncSliders();
+</script>
+
+<script>
+// 註冊 Service Worker：裝到主畫面後沒有網路也能開
+if ("serviceWorker" in navigator) {
+  addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
+</script>
+</body>
+</html>
