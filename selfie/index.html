@@ -248,6 +248,10 @@
   }
 
   .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row button[aria-pressed="true"] {
+    background: var(--safelight); border-color: var(--safelight);
+    color: #241202; font-weight: 700;
+  }
 
   /* ---------- 底座 ---------- */
   #dock {
@@ -332,19 +336,28 @@
   </main>
 
   <nav id="tabs" role="tablist" aria-label="編修工具">
-    <button class="tab" role="tab" aria-selected="true"  data-pane="look">濾鏡</button>
-    <button class="tab" role="tab" aria-selected="false" data-pane="skin">美顏</button>
+    <button class="tab" role="tab" aria-selected="true"  data-pane="skin">美顏</button>
+    <button class="tab" role="tab" aria-selected="false" data-pane="look">濾鏡</button>
     <button class="tab" role="tab" aria-selected="false" data-pane="face">臉型</button>
     <button class="tab" role="tab" aria-selected="false" data-pane="tone">調整</button>
     <button class="tab" role="tab" aria-selected="false" data-pane="geo">旋轉裁切</button>
   </nav>
 
   <section id="panel">
-    <div class="pane on" data-pane="look">
+    <div class="pane" data-pane="look">
       <div id="sheet"><span class="hint">先載入照片</span></div>
     </div>
 
-    <div class="pane" data-pane="skin">
+    <div class="pane on" data-pane="skin">
+      <div class="ctl">
+        <div class="ctl-top"><label>一鍵美顏</label></div>
+        <div class="row" id="beautyRow">
+          <button data-beauty="off">關閉</button>
+          <button data-beauty="soft">自然</button>
+          <button data-beauty="normal" aria-pressed="true">標準</button>
+          <button data-beauty="strong">濃</button>
+        </div>
+      </div>
       <div class="ctl"><div class="ctl-top"><label for="s_smooth">磨皮</label><output id="o_smooth">0</output></div>
         <input type="range" id="s_smooth" data-k="smooth" min="0" max="100" value="0"></div>
       <div class="ctl"><div class="ctl-top"><label for="s_glow">亮膚</label><output id="o_glow">0</output></div>
@@ -435,17 +448,32 @@
 /* ===========================================================
    參數
    =========================================================== */
-const DEFAULTS = {
-  smooth: 0, glow: 0, rosy: 0, sharpen: 0,
+// 色調類參數（濾鏡會覆蓋這一組）
+const TONE_ZERO = {
   bright: 0, contrast: 0, sat: 0, warm: 0, fade: 0, vig: 0,
   tint: null            // [r,g,b] 加色，濾鏡預設專用
 };
+
+// 一鍵美顏的四段強度。膚質參數獨立於濾鏡，換濾鏡不會被洗掉。
+const BEAUTY = {
+  off:    { smooth: 0,  glow: 0,  rosy: 0,  sharpen: 0 },
+  soft:   { smooth: 38, glow: 24, rosy: 12, sharpen: 10 },
+  normal: { smooth: 62, glow: 40, rosy: 20, sharpen: 14 },
+  strong: { smooth: 85, glow: 58, rosy: 32, sharpen: 18 }
+};
+const SKIN_KEYS = ["smooth", "glow", "rosy", "sharpen"];
+
+// 一打開就是美顏狀態——這才是自拍 App 該有的預設
+const DEFAULTS = Object.assign({}, TONE_ZERO, BEAUTY.normal, {
+  bright: 5, contrast: 4, sat: 6, warm: 8
+});
+let beautyLevel = "normal";
 const GEO = { rot: 0, flipH: false, flipV: false, crop: 0 };
 
 // 臉型：cx/cy/size 是相對比例，換解析度也一樣準
 const FACE_DEFAULTS = { cx: 0.5, cy: 0.42, size: 30, slim: 0, eyes: 0, chin: 0 };
 let FACE = Object.assign({}, FACE_DEFAULTS);
-let currentTab = "look";
+let currentTab = "skin";
 
 // 前鏡頭即時預覽
 const CAM = { on: false, stream: null, video: null, raf: 0, facing: "user" };
@@ -463,10 +491,11 @@ const THUMB = 68;
 /* ===========================================================
    濾鏡預設 — 每個都是一組真實參數，不是貼圖
    =========================================================== */
+// 濾鏡只管色調，不碰膚質——換濾鏡不會把美顏設定清掉
 const LOOKS = [
-  { id: "none",  name: "原圖", p: {} },
-  { id: "soft",  name: "柔光", p: { smooth: 45, glow: 28, contrast: -4, sat: -4 } },
-  { id: "clear", name: "淨白", p: { smooth: 55, glow: 52, warm: -10, sat: -12, contrast: 6 } },
+  { id: "none",  name: "無濾鏡", p: {} },
+  { id: "soft",  name: "柔光", p: { bright: 8, contrast: -4, sat: -4, warm: 5 } },
+  { id: "clear", name: "淨白", p: { bright: 12, warm: -8, sat: -10, contrast: 6 } },
   { id: "sun",   name: "暖陽", p: { warm: 24, bright: 6, sat: 12, contrast: 8, vig: 12 } },
   { id: "film",  name: "底片", p: { fade: 32, contrast: 14, sat: -10, tint: [6, 2, -6], vig: 18 } },
   { id: "cool",  name: "冷調", p: { warm: -26, sat: -6, contrast: 10, tint: [-4, 0, 8] } },
@@ -673,8 +702,10 @@ function process(imgData, p) {
       if (skin > 0) {
         const y0 = (r * 299 + g * 587 + b * 114) / 1000;
         const y1 = (bigBlur[i] * 299 + bigBlur[i + 1] * 587 + bigBlur[i + 2] * 114) / 1000;
-        // 高反差處（眼、眉、髮、輪廓）不磨
-        const edge = clamp01(1 - Math.abs(y0 - y1) / 26);
+        // 只保護真正的高反差（眼、眉、髮、輪廓，通常 |Δ| > 80）。
+        // 門檻太低會連痘痘斑點一起保護住 —— 那正是要磨掉的東西。
+        const dY = Math.abs(y0 - y1);
+        const edge = dY < 34 ? 1 : clamp01(1 - (dY - 34) / 56);
 
         if (smooth > 0) {
           const wgt = smooth * skin * edge * 0.95;
@@ -930,7 +961,8 @@ function buildSheet() {
     const data = new ImageData(
       new Uint8ClampedArray(thumbData.data), thumbData.width, thumbData.height
     );
-    process(data, Object.assign({}, DEFAULTS, look.p));
+    // 縮圖只呈現色調差異，不跑磨皮：這樣濾鏡之間的差別才看得出來
+    process(data, Object.assign({}, TONE_ZERO, BEAUTY.off, look.p));
     cctx.putImageData(data, 0, 0);
 
     const label = document.createElement("span");
@@ -946,7 +978,10 @@ function applyLook(id) {
   const look = LOOKS.find((l) => l.id === id);
   if (!look) return;
   activeLook = id;
-  P = Object.assign({}, DEFAULTS, look.p);
+  // 保留目前的膚質設定，只換色調
+  const skin = {};
+  for (const k of SKIN_KEYS) skin[k] = P[k];
+  P = Object.assign({}, TONE_ZERO, look.p, skin);
   syncSliders();
   sheet.querySelectorAll(".chip").forEach((c) => {
     c.setAttribute("aria-pressed", String(c.dataset.look === id));
@@ -971,6 +1006,22 @@ function syncSliders() {
   }
 }
 
+// 一鍵美顏：一次設定四個膚質參數
+function setBeauty(level) {
+  beautyLevel = level;
+  Object.assign(P, BEAUTY[level]);
+  document.querySelectorAll("#beautyRow button").forEach((b) => {
+    b.setAttribute("aria-pressed", String(b.dataset.beauty === level));
+  });
+  syncSliders();
+  render();
+}
+
+document.querySelector("#beautyRow").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-beauty]");
+  if (b) setBeauty(b.dataset.beauty);
+});
+
 // 臉型滑桿獨立於色彩參數：換濾鏡不會把瘦臉大眼洗掉
 for (const el of faceSliders) {
   el.addEventListener("input", () => {
@@ -982,10 +1033,14 @@ for (const el of faceSliders) {
 
 for (const el of sliders) {
   el.addEventListener("input", () => {
-    P[el.dataset.k] = Number(el.value);
+    const k = el.dataset.k;
+    P[k] = Number(el.value);
     document.querySelector("#o_" + el.id.slice(2)).textContent = el.value;
-    // 手動調整就脫離預設濾鏡
-    if (activeLook !== "custom") {
+    // 手動微調就脫離對應的一鍵預設（膚質與色調互不影響）
+    if (SKIN_KEYS.includes(k)) {
+      beautyLevel = "custom";
+      document.querySelectorAll("#beautyRow button").forEach((b) => b.setAttribute("aria-pressed", "false"));
+    } else if (activeLook !== "custom") {
       activeLook = "custom";
       sheet.querySelectorAll(".chip").forEach((c) => c.setAttribute("aria-pressed", "false"));
     }
@@ -1053,7 +1108,9 @@ function loadFile(file, after) {
     meta.textContent = img.naturalWidth + " × " + img.naturalHeight;
 
     rebuildPreview();
-    autoFace();
+    // 只有真的抓到臉才套預設瘦臉大眼，抓不到就不動，免得亂變形
+    if (autoFace()) { FACE.slim = 22; FACE.eyes = 16; }
+    setBeauty(beautyLevel);
     syncSliders();
     buildSheet();
     URL.revokeObjectURL(url);
@@ -1126,7 +1183,7 @@ btnReset.addEventListener("click", () => {
   P = Object.assign({}, DEFAULTS);
   FACE = Object.assign({}, FACE_DEFAULTS);
   activeLook = "none";
-  syncSliders();
+  setBeauty("normal");
   sheet.querySelectorAll(".chip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.look === "none")));
   render();
 });
@@ -1196,9 +1253,9 @@ function liveFrame() {
     vctx.filter = liveFilter();
     vctx.drawImage(v, 0, 0, view.width, view.height);
     if (P.smooth > 0) {
-      const r = Math.max(1, (view.width / 300) * (P.smooth / 100));
+      const r = Math.max(1, (view.width / 160) * (P.smooth / 100));
       vctx.filter = `blur(${r.toFixed(1)}px) ` + liveFilter();
-      vctx.globalAlpha = Math.min(0.8, (P.smooth / 100) * 0.85);
+      vctx.globalAlpha = Math.min(0.85, (P.smooth / 100) * 0.95);
       vctx.drawImage(v, 0, 0, view.width, view.height);
       vctx.globalAlpha = 1;
     }
