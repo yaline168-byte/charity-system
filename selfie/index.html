@@ -338,7 +338,7 @@
 
 <div id="app">
   <header id="bar">
-    <div class="brand"><b>光室</b><i>Darkroom</i><i id="ver">v12</i></div>
+    <div class="brand"><b>光室</b><i>Darkroom</i><i id="ver">v13</i></div>
     <div class="bar-acts">
       <button id="btnReset" class="ghost" disabled>重設</button>
       <button id="btnExport" class="primary" disabled>儲存照片</button>
@@ -406,6 +406,8 @@
         <input type="range" id="s_even" data-k="even" min="0" max="100" value="0"></div>
       <div class="ctl"><div class="ctl-top"><label for="s_shine">去油光</label><output id="o_shine">0</output></div>
         <input type="range" id="s_shine" data-k="shine" min="0" max="100" value="0"></div>
+      <div class="ctl"><div class="ctl-top"><label for="s_chroma">勻色（去紅斑）</label><output id="o_chroma">0</output></div>
+        <input type="range" id="s_chroma" data-k="chroma" min="0" max="100" value="0"></div>
       <div class="ctl"><div class="ctl-top"><label for="s_glow">亮膚</label><output id="o_glow">0</output></div>
         <input type="range" id="s_glow" data-k="glow" min="0" max="100" value="0"></div>
       <div class="ctl"><div class="ctl-top"><label for="s_rosy">紅潤</label><output id="o_rosy">0</output></div>
@@ -507,12 +509,12 @@ const TONE_ZERO = {
 // 調校方向：皮膚平滑但保留臉部結構，提亮走「透亮」而非「刷白」，
 // 紅潤收斂 —— 過紅會讓膚色顯得不自然。
 const BEAUTY = {
-  off:    { smooth: 0,  even: 0,  shine: 0,  glow: 0,  rosy: 0,  sharpen: 0,  autoexp: 0 },
-  soft:   { smooth: 42, even: 35, shine: 40, glow: 18, rosy: 6,  sharpen: 12, autoexp: 55 },
-  normal: { smooth: 68, even: 58, shine: 65, glow: 30, rosy: 10, sharpen: 16, autoexp: 75 },
-  strong: { smooth: 88, even: 78, shine: 85, glow: 45, rosy: 16, sharpen: 20, autoexp: 90 }
+  off:    { smooth: 0,  even: 0,  shine: 0,  chroma: 0,  glow: 0,  rosy: 0, sharpen: 0,  autoexp: 0 },
+  soft:   { smooth: 42, even: 35, shine: 40, chroma: 38, glow: 18, rosy: 3, sharpen: 12, autoexp: 55 },
+  normal: { smooth: 68, even: 58, shine: 65, chroma: 58, glow: 30, rosy: 5, sharpen: 16, autoexp: 75 },
+  strong: { smooth: 88, even: 78, shine: 85, chroma: 75, glow: 45, rosy: 8, sharpen: 20, autoexp: 90 }
 };
-const SKIN_KEYS = ["smooth", "even", "shine", "glow", "rosy", "sharpen", "autoexp"];
+const SKIN_KEYS = ["smooth", "even", "shine", "chroma", "glow", "rosy", "sharpen", "autoexp"];
 
 // 一打開就是美顏狀態——這才是自拍 App 該有的預設
 const DEFAULTS = Object.assign({}, TONE_ZERO, BEAUTY.normal, {
@@ -673,7 +675,7 @@ function guidedFields(d, w, h, strength, maxField) {
   const lh = Math.max(1, Math.round(h * scale));
   const n = lw * lh;
 
-  const [Y, R, G, B, YY, tmp, mY, mYY, mR, mG, mB, A, bR, bG, bB] = pool(n, 15);
+  const [Y, R, G, B, YY, tmp, mY, mYY, mR, mG, mB, A, bR, bG, bB, cR, cG, cB] = pool(n, 18);
   let skinSum = 0, skinN = 0;
 
   for (let y = 0; y < lh; y++) {
@@ -717,10 +719,17 @@ function guidedFields(d, w, h, strength, maxField) {
   boxF(G, bG, tmp, lw, lh, brad);
   boxF(B, bB, tmp, lw, lh, brad);
 
+  // 顏色基準要比亮度基準更寬：紅斑範圍大，半徑不夠的話基準會被
+  // 紅斑本身染紅，偏差就量不出來。
+  const crad = Math.max(brad * 2, Math.round(Math.min(lw, lh) / 3.5));
+  boxF(R, cR, tmp, lw, lh, crad);
+  boxF(G, cG, tmp, lw, lh, crad);
+  boxF(B, cB, tmp, lw, lh, crad);
+
   // 膚色不足時回傳 0，呼叫端就會跳過自動曝光，避免對著非人臉亂調
   const skinY = skinN > n * 0.03 ? skinSum / skinN : 0;
 
-  return { lw, lh, scale, A, mR, mG, mB, bR, bG, bB, skinY };
+  return { lw, lh, scale, A, mR, mG, mB, bR, bG, bB, cR, cG, cB, skinY };
 }
 
 // 雙線性取樣低解析度係數場
@@ -821,6 +830,7 @@ function process(imgData, p, live) {
   const smooth   = p.smooth / 100;
   const even     = (p.even || 0) / 100;
   const shine    = (p.shine || 0) / 100;
+  const chroma   = (p.chroma || 0) / 100;
   const glow     = p.glow / 100;
   const rosy     = p.rosy / 100;
   const sharpen  = p.sharpen / 100;
@@ -834,7 +844,7 @@ function process(imgData, p, live) {
 
   // 保邊平滑的係數場（低解析度算，全解析度取樣）
   let GF = null, smallBlur = null;
-  if (smooth > 0 || even > 0 || shine > 0 || glow > 0 || rosy > 0) {
+  if (smooth > 0 || even > 0 || shine > 0 || chroma > 0 || glow > 0 || rosy > 0) {
     GF = guidedFields(d, w, h, smooth, live ? 400 : 720);
   }
   if (sharpen > 0 && !live) {
@@ -912,6 +922,24 @@ function process(imgData, p, live) {
               const k = (over - 12) * shine * skin * 0.95;
               r -= k; g -= k; b -= k;
             }
+          }
+        }
+
+        // 勻色：把顏色拉向周圍的基準膚色，但保留自己的亮度。
+        // 紅斑、暗沉、色素不均是「顏色」偏差，不是亮度偏差 ——
+        // 只做亮度均勻救不了泛紅的臉頰和鼻翼。
+        if (chroma > 0) {
+          const cbr = sampleField(GF, GF.cR, gx, gy);
+          const cbg = sampleField(GF, GF.cG, gx, gy);
+          const cbb = sampleField(GF, GF.cB, gx, gy);
+          const by2 = (cbr * 299 + cbg * 587 + cbb * 114) / 1000;
+          if (by2 > 1) {
+            const y2 = (r * 299 + g * 587 + b * 114) / 1000;
+            const k = y2 / by2;                 // 讓基準色符合這一點的亮度
+            const t = chroma * skin;
+            r += (cbr * k - r) * t;
+            g += (cbg * k - g) * t;
+            b += (cbb * k - b) * t;
           }
         }
 

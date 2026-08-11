@@ -1,5 +1,5 @@
 /* 光室 — 離線快取 */
-const CACHE = "guangshi-vmso73h4p";
+const CACHE = "guangshi-vmso78rd1";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest",
   "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
