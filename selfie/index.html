@@ -338,7 +338,7 @@
 
 <div id="app">
   <header id="bar">
-    <div class="brand"><b>光室</b><i>Darkroom</i><i id="ver">v6</i></div>
+    <div class="brand"><b>光室</b><i>Darkroom</i><i id="ver">v7</i></div>
     <div class="bar-acts">
       <button id="btnReset" class="ghost" disabled>重設</button>
       <button id="btnExport" class="primary" disabled>儲存照片</button>
@@ -619,6 +619,87 @@ function boxBlur(src, w, h, r) {
 const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
 
 /* -----------------------------------------------------------
+   導引濾波（guided filter）—— 真正的保邊平滑
+   高斯模糊會把紋理和結構一起抹掉，所以磨皮拉高就整片糊。
+   這裡改看「局部變異數」：
+     變異數小（皮膚紋理）→ 用局部平均取代，紋理被壓平
+     變異數大（眼睛、眉毛、輪廓）→ 保留原值，邊緣不動
+   係數本身是平滑的場，所以在低解析度算完再放大幾乎無損，
+   記憶體和運算量都降到可以在手機上跑。
+   ----------------------------------------------------------- */
+function boxF(src, w, h, r) {
+  const n = w * h;
+  const tmp = new Float32Array(n), out = new Float32Array(n);
+  const span = r * 2 + 1;
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    let s = 0;
+    for (let i = -r; i <= r; i++) s += src[row + Math.min(w - 1, Math.max(0, i))];
+    for (let x = 0; x < w; x++) {
+      tmp[row + x] = s / span;
+      s += src[row + Math.min(w - 1, x + r + 1)] - src[row + Math.max(0, x - r)];
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let s = 0;
+    for (let i = -r; i <= r; i++) s += tmp[Math.min(h - 1, Math.max(0, i)) * w + x];
+    for (let y = 0; y < h; y++) {
+      out[y * w + x] = s / span;
+      s += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
+    }
+  }
+  return out;
+}
+
+// 回傳一組低解析度的係數場，供全解析度取樣使用
+function guidedFields(d, w, h, strength) {
+  const lw = Math.min(w, 720);
+  const scale = lw / w;
+  const lh = Math.max(1, Math.round(h * scale));
+  const n = lw * lh;
+
+  const Y = new Float32Array(n), R = new Float32Array(n),
+        G = new Float32Array(n), B = new Float32Array(n), YY = new Float32Array(n);
+
+  for (let y = 0; y < lh; y++) {
+    const sy = Math.min(h - 1, Math.round(y / scale));
+    for (let x = 0; x < lw; x++) {
+      const sx = Math.min(w - 1, Math.round(x / scale));
+      const i = (sy * w + sx) * 4, p = y * lw + x;
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      R[p] = r; G[p] = g; B[p] = b;
+      const yy = (r * 299 + g * 587 + b * 114) / 1000;
+      Y[p] = yy; YY[p] = yy * yy;
+    }
+  }
+
+  const rad = Math.max(2, Math.round((lw / 110) * (0.45 + strength * 0.85)));
+  const eps = 70 + strength * 780;   // 越大壓得越平
+
+  const mY = boxF(Y, lw, lh, rad), mYY = boxF(YY, lw, lh, rad);
+  const mR = boxF(R, lw, lh, rad), mG = boxF(G, lw, lh, rad), mB = boxF(B, lw, lh, rad);
+
+  const A = new Float32Array(n);
+  for (let p = 0; p < n; p++) {
+    const v = Math.max(0, mYY[p] - mY[p] * mY[p]);
+    A[p] = v / (v + eps);
+  }
+  return { lw, lh, scale, A, mR, mG, mB };
+}
+
+// 雙線性取樣低解析度係數場
+function sampleField(f, arr, x, y) {
+  const fx = Math.min(f.lw - 1.001, Math.max(0, x * f.scale));
+  const fy = Math.min(f.lh - 1.001, Math.max(0, y * f.scale));
+  const x0 = fx | 0, y0 = fy | 0;
+  const dx = fx - x0, dy = fy - y0;
+  const i00 = y0 * f.lw + x0, i10 = i00 + 1;
+  const i01 = i00 + f.lw, i11 = i01 + 1;
+  return arr[i00] * (1 - dx) * (1 - dy) + arr[i10] * dx * (1 - dy) +
+         arr[i01] * (1 - dx) * dy + arr[i11] * dx * dy;
+}
+
+/* -----------------------------------------------------------
    臉型變形：反向映射 + 雙線性取樣
    對每個輸出點推算它該從原圖的哪裡取色，所以不會有破洞。
    ----------------------------------------------------------- */
@@ -713,11 +794,10 @@ function process(imgData, p) {
   const vig      = p.vig / 100;
   const tint     = p.tint;
 
-  // 需要時才做模糊
-  let bigBlur = null, smallBlur = null;
+  // 保邊平滑的係數場（低解析度算，全解析度取樣）
+  let GF = null, smallBlur = null;
   if (smooth > 0 || glow > 0 || rosy > 0) {
-    const r = Math.max(1, Math.round(Math.min(w, h) / 150 * (0.5 + smooth * 0.9)));
-    bigBlur = boxBlur(d, w, h, r);
+    GF = guidedFields(d, w, h, smooth);
   }
   if (sharpen > 0) {
     smallBlur = boxBlur(d, w, h, Math.max(1, Math.round(Math.min(w, h) / 600)));
@@ -741,25 +821,25 @@ function process(imgData, p) {
     let r = d[i], g = d[i + 1], b = d[i + 2];
 
     /* --- 膚質：磨皮 / 亮膚 / 紅潤 --- */
-    if (bigBlur) {
+    if (GF) {
       const rb = r - b;
       let skin = 0;
       if (r > 45 && r >= g && g >= b) {
         skin = clamp01((rb - 6) / 18) * clamp01((125 - rb) / 45);
       }
       if (skin > 0) {
-        const y0 = (r * 299 + g * 587 + b * 114) / 1000;
-        const y1 = (bigBlur[i] * 299 + bigBlur[i + 1] * 587 + bigBlur[i + 2] * 114) / 1000;
-        // 只保護真正的高反差（眼、眉、髮、輪廓，通常 |Δ| > 80）。
-        // 門檻太低會連痘痘斑點一起保護住 —— 那正是要磨掉的東西。
-        const dY = Math.abs(y0 - y1);
-        const edge = dY < 34 ? 1 : clamp01(1 - (dY - 34) / 56);
+        const gx = px % w, gy = (px / w) | 0;
 
         if (smooth > 0) {
-          const wgt = smooth * skin * edge * 0.95;
-          r += (bigBlur[i] - r) * wgt;
-          g += (bigBlur[i + 1] - g) * wgt;
-          b += (bigBlur[i + 2] - b) * wgt;
+          // 導引濾波：a 小的地方（皮膚）換成局部平均，a 大的地方（邊緣）保留原值
+          const a = sampleField(GF, GF.A, gx, gy);
+          const qr = a * r + (1 - a) * sampleField(GF, GF.mR, gx, gy);
+          const qg = a * g + (1 - a) * sampleField(GF, GF.mG, gx, gy);
+          const qb = a * b + (1 - a) * sampleField(GF, GF.mB, gx, gy);
+          const wgt = smooth * skin;
+          r += (qr - r) * wgt;
+          g += (qg - g) * wgt;
+          b += (qb - b) * wgt;
         }
         if (glow > 0) {
           // 幾乎等比提亮，維持中性膚色；偏黃會顯得蠟黃
