@@ -338,7 +338,7 @@
 
 <div id="app">
   <header id="bar">
-    <div class="brand"><b>光室</b><i>Darkroom</i><i id="ver">v7</i></div>
+    <div class="brand"><b>光室</b><i>Darkroom</i><i id="ver">v8</i></div>
     <div class="bar-acts">
       <button id="btnReset" class="ghost" disabled>重設</button>
       <button id="btnExport" class="primary" disabled>儲存照片</button>
@@ -400,6 +400,8 @@
       </div>
       <div class="ctl"><div class="ctl-top"><label for="s_smooth">磨皮</label><output id="o_smooth">0</output></div>
         <input type="range" id="s_smooth" data-k="smooth" min="0" max="100" value="0"></div>
+      <div class="ctl"><div class="ctl-top"><label for="s_even">勻膚</label><output id="o_even">0</output></div>
+        <input type="range" id="s_even" data-k="even" min="0" max="100" value="0"></div>
       <div class="ctl"><div class="ctl-top"><label for="s_glow">亮膚</label><output id="o_glow">0</output></div>
         <input type="range" id="s_glow" data-k="glow" min="0" max="100" value="0"></div>
       <div class="ctl"><div class="ctl-top"><label for="s_rosy">紅潤</label><output id="o_rosy">0</output></div>
@@ -501,12 +503,12 @@ const TONE_ZERO = {
 // 調校方向：皮膚平滑但保留臉部結構，提亮走「透亮」而非「刷白」，
 // 紅潤收斂 —— 過紅會讓膚色顯得不自然。
 const BEAUTY = {
-  off:    { smooth: 0,  glow: 0,  rosy: 0,  sharpen: 0 },
-  soft:   { smooth: 42, glow: 18, rosy: 6,  sharpen: 12 },
-  normal: { smooth: 68, glow: 30, rosy: 10, sharpen: 16 },
-  strong: { smooth: 88, glow: 45, rosy: 16, sharpen: 20 }
+  off:    { smooth: 0,  even: 0,  glow: 0,  rosy: 0,  sharpen: 0 },
+  soft:   { smooth: 42, even: 35, glow: 18, rosy: 6,  sharpen: 12 },
+  normal: { smooth: 68, even: 58, glow: 30, rosy: 10, sharpen: 16 },
+  strong: { smooth: 88, even: 78, glow: 45, rosy: 16, sharpen: 20 }
 };
-const SKIN_KEYS = ["smooth", "glow", "rosy", "sharpen"];
+const SKIN_KEYS = ["smooth", "even", "glow", "rosy", "sharpen"];
 
 // 一打開就是美顏狀態——這才是自拍 App 該有的預設
 const DEFAULTS = Object.assign({}, TONE_ZERO, BEAUTY.normal, {
@@ -684,7 +686,15 @@ function guidedFields(d, w, h, strength) {
     const v = Math.max(0, mYY[p] - mY[p] * mY[p]);
     A[p] = v / (v + eps);
   }
-  return { lw, lh, scale, A, mR, mG, mB };
+
+  // 大半徑的基準層：代表「這一帶皮膚原本該有的亮度」。
+  // 黑眼圈、法令紋陰影、顴骨暗塊都是相對這個基準偏暗，用它來提亮。
+  // 半徑必須明顯大於要修的暗塊，否則基準會跟著陰影一起沉下去，
+  // 偏差就量不出來。黑眼圈、法令紋大約是臉寬的 1/5，取 1/7 邊長。
+  const brad = Math.max(24, Math.round(Math.min(lw, lh) / 7));
+  const bR = boxF(R, lw, lh, brad), bG = boxF(G, lw, lh, brad), bB = boxF(B, lw, lh, brad);
+
+  return { lw, lh, scale, A, mR, mG, mB, bR, bG, bB };
 }
 
 // 雙線性取樣低解析度係數場
@@ -783,6 +793,7 @@ function process(imgData, p) {
   const n = d.length;
 
   const smooth   = p.smooth / 100;
+  const even     = (p.even || 0) / 100;
   const glow     = p.glow / 100;
   const rosy     = p.rosy / 100;
   const sharpen  = p.sharpen / 100;
@@ -796,7 +807,7 @@ function process(imgData, p) {
 
   // 保邊平滑的係數場（低解析度算，全解析度取樣）
   let GF = null, smallBlur = null;
-  if (smooth > 0 || glow > 0 || rosy > 0) {
+  if (smooth > 0 || even > 0 || glow > 0 || rosy > 0) {
     GF = guidedFields(d, w, h, smooth);
   }
   if (sharpen > 0) {
@@ -841,6 +852,19 @@ function process(imgData, p) {
           g += (qg - g) * wgt;
           b += (qb - b) * wgt;
         }
+        // 勻膚：只把「比周圍基準暗」的皮膚往上拉 —— 黑眼圈、
+        // 法令紋陰影、暗塊。亮部完全不動，才不會把臉壓成一片死白。
+        if (even > 0) {
+          const by = (sampleField(GF, GF.bR, gx, gy) * 299 +
+                      sampleField(GF, GF.bG, gx, gy) * 587 +
+                      sampleField(GF, GF.bB, gx, gy) * 114) / 1000;
+          const y = (r * 299 + g * 587 + b * 114) / 1000;
+          if (by > y) {
+            const k = (by - y) * even * skin * 0.80;
+            r += k; g += k; b += k;
+          }
+        }
+
         if (glow > 0) {
           // 幾乎等比提亮，維持中性膚色；偏黃會顯得蠟黃
           const lift = glow * skin * 0.30;
