@@ -338,7 +338,7 @@
 
 <div id="app">
   <header id="bar">
-    <div class="brand"><b>光室</b><i>Darkroom</i><i id="ver">v9</i></div>
+    <div class="brand"><b>光室</b><i>Darkroom</i><i id="ver">v10</i></div>
     <div class="bar-acts">
       <button id="btnReset" class="ghost" disabled>重設</button>
       <button id="btnExport" class="primary" disabled>儲存照片</button>
@@ -404,6 +404,8 @@
         <input type="range" id="s_autoexp" data-k="autoexp" min="0" max="100" value="0"></div>
       <div class="ctl"><div class="ctl-top"><label for="s_even">勻膚</label><output id="o_even">0</output></div>
         <input type="range" id="s_even" data-k="even" min="0" max="100" value="0"></div>
+      <div class="ctl"><div class="ctl-top"><label for="s_shine">去油光</label><output id="o_shine">0</output></div>
+        <input type="range" id="s_shine" data-k="shine" min="0" max="100" value="0"></div>
       <div class="ctl"><div class="ctl-top"><label for="s_glow">亮膚</label><output id="o_glow">0</output></div>
         <input type="range" id="s_glow" data-k="glow" min="0" max="100" value="0"></div>
       <div class="ctl"><div class="ctl-top"><label for="s_rosy">紅潤</label><output id="o_rosy">0</output></div>
@@ -505,12 +507,12 @@ const TONE_ZERO = {
 // 調校方向：皮膚平滑但保留臉部結構，提亮走「透亮」而非「刷白」，
 // 紅潤收斂 —— 過紅會讓膚色顯得不自然。
 const BEAUTY = {
-  off:    { smooth: 0,  even: 0,  glow: 0,  rosy: 0,  sharpen: 0,  autoexp: 0 },
-  soft:   { smooth: 42, even: 35, glow: 18, rosy: 6,  sharpen: 12, autoexp: 55 },
-  normal: { smooth: 68, even: 58, glow: 30, rosy: 10, sharpen: 16, autoexp: 75 },
-  strong: { smooth: 88, even: 78, glow: 45, rosy: 16, sharpen: 20, autoexp: 90 }
+  off:    { smooth: 0,  even: 0,  shine: 0,  glow: 0,  rosy: 0,  sharpen: 0,  autoexp: 0 },
+  soft:   { smooth: 42, even: 35, shine: 40, glow: 18, rosy: 6,  sharpen: 12, autoexp: 55 },
+  normal: { smooth: 68, even: 58, shine: 65, glow: 30, rosy: 10, sharpen: 16, autoexp: 75 },
+  strong: { smooth: 88, even: 78, shine: 85, glow: 45, rosy: 16, sharpen: 20, autoexp: 90 }
 };
-const SKIN_KEYS = ["smooth", "even", "glow", "rosy", "sharpen", "autoexp"];
+const SKIN_KEYS = ["smooth", "even", "shine", "glow", "rosy", "sharpen", "autoexp"];
 
 // 一打開就是美顏狀態——這才是自拍 App 該有的預設
 const DEFAULTS = Object.assign({}, TONE_ZERO, BEAUTY.normal, {
@@ -806,6 +808,7 @@ function process(imgData, p) {
 
   const smooth   = p.smooth / 100;
   const even     = (p.even || 0) / 100;
+  const shine    = (p.shine || 0) / 100;
   const glow     = p.glow / 100;
   const rosy     = p.rosy / 100;
   const sharpen  = p.sharpen / 100;
@@ -819,7 +822,7 @@ function process(imgData, p) {
 
   // 保邊平滑的係數場（低解析度算，全解析度取樣）
   let GF = null, smallBlur = null;
-  if (smooth > 0 || even > 0 || glow > 0 || rosy > 0) {
+  if (smooth > 0 || even > 0 || shine > 0 || glow > 0 || rosy > 0) {
     GF = guidedFields(d, w, h, smooth);
   }
   if (sharpen > 0) {
@@ -885,6 +888,14 @@ function process(imgData, p) {
           if (by > y) {
             const k = (by - y) * even * skin * 0.80;
             r += k; g += k; b += k;
+          } else if (shine > 0) {
+            // 去油光：只壓「明顯高於周圍基準」的反光（鼻頭、額頭、下巴）。
+            // 門檻以下的高光是臉部立體感，壓掉臉會變平。
+            const over = y - by;
+            if (over > 12) {
+              const k = (over - 12) * shine * skin * 0.95;
+              r -= k; g -= k; b -= k;
+            }
           }
         }
 
